@@ -26,16 +26,19 @@ export async function ensurePersonalWorkspace(user: User) {
     { onConflict: "id" },
   );
 
-  const { data: existingWorkspace, error: workspaceError } = await supabase
+  const { data: existingWorkspaces, error: workspaceError } = await supabase
     .from("workspaces")
     .select("id")
     .eq("owner_user_id", user.id)
     .eq("kind", "personal")
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
 
   if (workspaceError) {
     throw workspaceError;
   }
+
+  const existingWorkspace = existingWorkspaces?.[0];
 
   if (existingWorkspace?.id) {
     await supabase.from("workspace_members").upsert(
