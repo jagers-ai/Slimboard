@@ -8,3 +8,4 @@ coverage
 *.tsbuildinfo
 supabase/.branches
 supabase/.temp
+.vercel

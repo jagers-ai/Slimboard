@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { getOptionalEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -13,8 +12,5 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  const env = getOptionalEnv();
-  const siteUrl = env.siteUrl ?? requestUrl.origin;
-
-  return NextResponse.redirect(new URL(next, siteUrl));
+  return NextResponse.redirect(new URL(next, requestUrl.origin));
 }
