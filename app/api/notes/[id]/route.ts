@@ -5,7 +5,7 @@ import {
   getNoteWithImageUrl,
   updateNoteForUser,
 } from "@/lib/notes";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +14,8 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(_request: Request, { params }: Params) {
-  const user = await getRouteUser();
+export async function GET(request: Request, { params }: Params) {
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
-  const user = await getRouteUser();
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -60,8 +60,8 @@ export async function PATCH(request: Request, { params }: Params) {
   return NextResponse.json({ note });
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
-  const user = await getRouteUser();
+export async function DELETE(request: Request, { params }: Params) {
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -75,13 +75,4 @@ export async function DELETE(_request: Request, { params }: Params) {
   }
 
   return NextResponse.json({ ok: true });
-}
-
-async function getRouteUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  return user;
 }

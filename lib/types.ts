@@ -28,6 +28,20 @@ export type NoteWithImageUrl = WhiteboardNote & {
   image_url: string | null;
 };
 
+export type NotePreview = Pick<
+  WhiteboardNote,
+  | "id"
+  | "title"
+  | "raw_text"
+  | "summary"
+  | "visual_context"
+  | "analysis_image_path"
+  | "status"
+  | "created_at"
+> & {
+  image_url: string | null;
+};
+
 export type GeminiAnalysis = {
   title: string;
   rawText: string;

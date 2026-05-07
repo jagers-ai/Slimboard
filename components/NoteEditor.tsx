@@ -85,8 +85,7 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
         throw new Error(payload.error ?? "삭제에 실패했어요.");
       }
 
-      router.push("/");
-      router.refresh();
+      router.push("/notes");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "삭제 중 문제가 생겼어요.");
       setIsDeleting(false);

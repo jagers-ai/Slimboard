@@ -1,19 +1,22 @@
-import type { User } from "@supabase/supabase-js";
-
 import {
   ANALYSIS_VERSION,
   PROMPT_VERSION,
   analyzeWhiteboardImageWithFallback,
   shouldRetryWithOriginal,
 } from "@/lib/gemini";
+import type { AppUser } from "@/lib/auth";
 import { buildSearchText } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   createSignedImageUrl,
+  createSignedImageUrls,
   downloadImageObject,
   removeImageObjects,
 } from "@/lib/storage";
-import type { GeminiAnalysis, NoteWithImageUrl, WhiteboardNote } from "@/lib/types";
+import type { GeminiAnalysis, NotePreview, NoteWithImageUrl, WhiteboardNote } from "@/lib/types";
+
+const NOTE_PREVIEW_SELECT =
+  "id,title,raw_text,summary,visual_context,analysis_image_path,status,created_at";
 
 export async function userCanAccessNote(noteId: string, userId: string) {
   const note = await getNoteForUser(noteId, userId);
@@ -25,6 +28,7 @@ export async function listNotesForUser(input: {
   userId: string;
   query?: string;
   limit?: number;
+  includeImageUrl?: boolean;
 }) {
   const supabase = createAdminClient();
   const workspaceIds = await getAccessibleWorkspaceIds(input.userId);
@@ -35,7 +39,7 @@ export async function listNotesForUser(input: {
 
   let query = supabase
     .from("whiteboard_notes")
-    .select("*")
+    .select(NOTE_PREVIEW_SELECT)
     .in("workspace_id", workspaceIds)
     .order("created_at", { ascending: false })
     .limit(input.limit ?? 30);
@@ -52,14 +56,21 @@ export async function listNotesForUser(input: {
     throw error;
   }
 
-  const notes = (data ?? []) as WhiteboardNote[];
+  const notes = (data ?? []) as Array<Omit<NotePreview, "image_url">>;
 
-  return Promise.all(
-    notes.map(async (note) => ({
+  if (input.includeImageUrl === false) {
+    return notes.map((note) => ({
       ...note,
-      image_url: await createSignedImageUrl(note.analysis_image_path),
-    })),
-  ) satisfies Promise<NoteWithImageUrl[]>;
+      image_url: null,
+    })) satisfies NotePreview[];
+  }
+
+  const signedUrls = await createSignedImageUrls(notes.map((note) => note.analysis_image_path));
+
+  return notes.map((note) => ({
+    ...note,
+    image_url: signedUrls.get(note.analysis_image_path) ?? null,
+  })) satisfies NotePreview[];
 }
 
 export async function getNoteForUser(noteId: string, userId: string) {
@@ -165,7 +176,7 @@ export async function deleteNoteForUser(noteId: string, userId: string) {
   return true;
 }
 
-export async function analyzeNoteForUser(noteId: string, user: User) {
+export async function analyzeNoteForUser(noteId: string, user: AppUser) {
   const supabase = createAdminClient();
   const note = await getNoteForUser(noteId, user.id);
 

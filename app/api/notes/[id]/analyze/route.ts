@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { analyzeNoteForUser } from "@/lib/notes";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,11 +10,8 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-export async function POST(_request: Request, { params }: Params) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function POST(request: Request, { params }: Params) {
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

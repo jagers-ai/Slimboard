@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Mic } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { NoteWithImageUrl } from "@/lib/types";
+import type { NotePreview } from "@/lib/types";
 
 type SearchResultsProps = {
-  notes: NoteWithImageUrl[];
+  notes: NotePreview[];
   query: string;
 };
 
@@ -42,7 +42,7 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
   );
 }
 
-function getResultSnippet(note: NoteWithImageUrl) {
+function getResultSnippet(note: NotePreview) {
   return note.summary || note.raw_text || note.visual_context || "분석이 진행 중입니다.";
 }
 

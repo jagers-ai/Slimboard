@@ -6,12 +6,12 @@ import {
   listRecentSearchesForUser,
   saveRecentSearchForUser,
 } from "@/lib/recent-searches";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const user = await getAuthenticatedUser();
+export async function GET(request: Request) {
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,7 +23,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getAuthenticatedUser();
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const user = await getAuthenticatedUser();
+  const user = await getCurrentUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -54,13 +54,4 @@ export async function DELETE(request: Request) {
   await deleteRecentSearchForUser(user.id, query);
 
   return NextResponse.json({ ok: true });
-}
-
-async function getAuthenticatedUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  return user;
 }

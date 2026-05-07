@@ -59,7 +59,6 @@ export function CaptureUploader() {
       }
 
       router.push(`/notes/${noteId}`);
-      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "처리 중 문제가 생겼어요.");
       setStage("idle");

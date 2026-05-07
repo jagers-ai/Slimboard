@@ -1,8 +1,7 @@
-import type { User } from "@supabase/supabase-js";
-
+import { type AppUser, isLocalDevUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export async function ensurePersonalWorkspace(user: User) {
+export async function ensurePersonalWorkspace(user: AppUser) {
   const supabase = createAdminClient();
   const email = user.email ?? "";
   const fullName =
@@ -15,16 +14,18 @@ export async function ensurePersonalWorkspace(user: User) {
     (user.user_metadata?.picture as string | undefined) ??
     null;
 
-  await supabase.from("profiles").upsert(
-    {
-      id: user.id,
-      email,
-      full_name: fullName,
-      avatar_url: avatarUrl,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
+  if (!isLocalDevUser(user)) {
+    await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        email,
+        full_name: fullName,
+        avatar_url: avatarUrl,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    );
+  }
 
   const { data: existingWorkspaces, error: workspaceError } = await supabase
     .from("workspaces")

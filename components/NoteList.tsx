@@ -2,11 +2,11 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 
 import { StatusBadge } from "@/components/StatusBadge";
-import type { NoteWithImageUrl } from "@/lib/types";
+import type { NotePreview } from "@/lib/types";
 
 type NoteListProps = {
   emptyText: string;
-  notes: NoteWithImageUrl[];
+  notes: NotePreview[];
 };
 
 export function NoteList({ emptyText, notes }: NoteListProps) {

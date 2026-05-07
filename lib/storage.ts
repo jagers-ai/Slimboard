@@ -57,6 +57,33 @@ export async function createSignedImageUrl(path: string, expiresIn = 60 * 10) {
   return data.signedUrl;
 }
 
+export async function createSignedImageUrls(paths: string[], expiresIn = 60 * 10) {
+  const normalizedPaths = Array.from(new Set(paths.filter(Boolean)));
+  const urls = new Map<string, string | null>();
+
+  if (normalizedPaths.length === 0) {
+    return urls;
+  }
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.storage
+    .from(WHITEBOARD_BUCKET)
+    .createSignedUrls(normalizedPaths, expiresIn);
+
+  if (error) {
+    normalizedPaths.forEach((path) => urls.set(path, null));
+    return urls;
+  }
+
+  data?.forEach((item) => {
+    if (item.path) {
+      urls.set(item.path, item.signedUrl);
+    }
+  });
+
+  return urls;
+}
+
 export async function removeImageObjects(paths: string[]) {
   const supabase = createAdminClient();
   const normalized = paths.filter(Boolean);

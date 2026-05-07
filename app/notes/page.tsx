@@ -6,7 +6,6 @@ import { NoteList } from "@/components/NoteList";
 import { hasCoreEnv } from "@/lib/env";
 import { requireUser } from "@/lib/auth";
 import { listNotesForUser } from "@/lib/notes";
-import { ensurePersonalWorkspace } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +26,6 @@ export default async function NotesPage() {
   }
 
   const user = await requireUser();
-  await ensurePersonalWorkspace(user);
 
   const notes = await listNotesForUser({
     userId: user.id,

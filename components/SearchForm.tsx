@@ -22,13 +22,15 @@ export function SearchForm({ initialQuery = "" }: SearchFormProps) {
       return;
     }
 
-    await fetch("/api/recent-searches", {
+    router.push(`/search?q=${encodeURIComponent(trimmedQuery)}`);
+
+    void fetch("/api/recent-searches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: trimmedQuery }),
+    }).catch(() => {
+      // 최근 검색어 저장 실패는 검색 이동을 막지 않습니다.
     });
-
-    router.push(`/search?q=${encodeURIComponent(trimmedQuery)}`);
   }
 
   return (

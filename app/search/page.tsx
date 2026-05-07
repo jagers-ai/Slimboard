@@ -6,7 +6,6 @@ import { hasCoreEnv } from "@/lib/env";
 import { requireUser } from "@/lib/auth";
 import { listNotesForUser } from "@/lib/notes";
 import { listRecentSearchesForUser } from "@/lib/recent-searches";
-import { ensurePersonalWorkspace } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +28,6 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   }
 
   const user = await requireUser();
-  await ensurePersonalWorkspace(user);
 
   const params = await searchParams;
   const q = params.q?.trim() ?? "";
@@ -38,6 +36,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         userId: user.id,
         query: q,
         limit: 50,
+        includeImageUrl: false,
       })
     : [];
   const recentSearches = q ? [] : await listRecentSearchesForUser(user.id);
