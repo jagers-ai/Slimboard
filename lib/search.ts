@@ -5,13 +5,11 @@ export function buildSearchText(input: {
   raw_text?: string | null;
   summary?: string | null;
   keywords?: string[] | null;
-  visual_context?: string | null;
 }) {
   return [
     input.title,
     input.raw_text,
     input.summary,
-    input.visual_context,
     ...(input.keywords ?? []),
   ]
     .filter(Boolean)
@@ -25,9 +23,6 @@ export function normalizeAnalysis(analysis: Partial<GeminiAnalysis>): GeminiAnal
     rawText: cleanText(analysis.rawText),
     summary: cleanText(analysis.summary),
     keywords: cleanList(analysis.keywords).slice(0, 16),
-    visualContext: cleanText(analysis.visualContext),
-    detectedLanguages: cleanList(analysis.detectedLanguages).slice(0, 8),
-    warnings: cleanList(analysis.warnings).slice(0, 10),
   };
 }
 

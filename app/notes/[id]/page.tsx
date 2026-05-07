@@ -31,6 +31,15 @@ export default async function NotePage({ params }: NotePageProps) {
     notFound();
   }
 
+  const editorNote = {
+    id: note.id,
+    title: note.title,
+    raw_text: note.raw_text,
+    summary: note.summary,
+    keywords: note.keywords,
+    error_message: note.error_message,
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar detail-topbar">
@@ -58,18 +67,9 @@ export default async function NotePage({ params }: NotePageProps) {
           <div className="detail-image">
             {note.image_url ? <img alt={note.title} src={note.image_url} /> : null}
           </div>
-          {note.warnings.length > 0 ? (
-            <div className="meta-list">
-              {note.warnings.map((warning) => (
-                <span className="chip" key={warning}>
-                  {warning}
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
 
-        <NoteEditor note={note} />
+        <NoteEditor note={editorNote} />
       </section>
 
       <BottomDock active="notes" />

@@ -1,8 +1,7 @@
 import {
   ANALYSIS_VERSION,
   PROMPT_VERSION,
-  analyzeWhiteboardImageWithFallback,
-  shouldRetryWithOriginal,
+  analyzeWhiteboardImage,
 } from "@/lib/gemini";
 import type { AppUser } from "@/lib/auth";
 import { buildSearchText } from "@/lib/search";
@@ -16,7 +15,7 @@ import {
 import type { GeminiAnalysis, NotePreview, NoteWithImageUrl, WhiteboardNote } from "@/lib/types";
 
 const NOTE_PREVIEW_SELECT =
-  "id,title,raw_text,summary,visual_context,analysis_image_path,status,created_at";
+  "id,title,raw_text,summary,analysis_image_path,status,created_at";
 
 export async function userCanAccessNote(noteId: string, userId: string) {
   const note = await getNoteForUser(noteId, userId);
@@ -123,13 +122,11 @@ export async function updateNoteForUser(input: {
   }
 
   const keywords = note.keywords ?? [];
-  const visualContext = note.visual_context ?? "";
   const searchText = buildSearchText({
     title: input.title,
     raw_text: input.rawText,
     summary: input.summary,
     keywords,
-    visual_context: visualContext,
   });
 
   const { data, error } = await supabase
@@ -196,31 +193,13 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser) {
 
   try {
     const analysisImage = await downloadImageObject(note.analysis_image_path);
-    let result = await analyzeWhiteboardImageWithFallback({
+    const result = await analyzeWhiteboardImage({
       buffer: analysisImage,
       mimeType: "image/jpeg",
     });
-    let fallbackModel = result.fallbackModel;
-
-    if (shouldRetryWithOriginal(result.analysis)) {
-      const originalImage = await downloadImageObject(note.original_image_path);
-
-      if (originalImage.length <= 18 * 1024 * 1024) {
-        const originalResult = await analyzeWhiteboardImageWithFallback({
-          buffer: originalImage,
-          mimeType: getMimeTypeFromPath(note.original_image_path),
-        });
-
-        if (scoreAnalysis(originalResult.analysis) >= scoreAnalysis(result.analysis)) {
-          fallbackModel = originalResult.fallbackModel;
-          result = originalResult;
-        }
-      }
-    }
 
     const update = mapAnalysisToUpdate(result.analysis, {
       model: result.model,
-      fallbackModel,
     });
 
     const { data, error } = await supabase
@@ -254,14 +233,13 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser) {
 
 function mapAnalysisToUpdate(
   analysis: GeminiAnalysis,
-  meta: { model: string; fallbackModel: string | null },
+  meta: { model: string },
 ) {
   const searchText = buildSearchText({
     title: analysis.title,
     raw_text: analysis.rawText,
     summary: analysis.summary,
     keywords: analysis.keywords,
-    visual_context: analysis.visualContext,
   });
 
   return {
@@ -269,11 +247,11 @@ function mapAnalysisToUpdate(
     raw_text: analysis.rawText,
     summary: analysis.summary,
     keywords: analysis.keywords,
-    visual_context: analysis.visualContext,
-    detected_languages: analysis.detectedLanguages,
-    warnings: analysis.warnings,
+    visual_context: "",
+    detected_languages: [],
+    warnings: [],
     model: meta.model,
-    fallback_model: meta.fallbackModel,
+    fallback_model: null,
     prompt_version: PROMPT_VERSION,
     analysis_version: ANALYSIS_VERSION,
     search_text: searchText,
@@ -281,30 +259,6 @@ function mapAnalysisToUpdate(
     error_message: null,
     updated_at: new Date().toISOString(),
   };
-}
-
-function scoreAnalysis(analysis: GeminiAnalysis) {
-  return analysis.rawText.length + analysis.summary.length - analysis.warnings.length * 50;
-}
-
-function getMimeTypeFromPath(path: string) {
-  if (path.endsWith(".png")) {
-    return "image/png";
-  }
-
-  if (path.endsWith(".webp")) {
-    return "image/webp";
-  }
-
-  if (path.endsWith(".heic")) {
-    return "image/heic";
-  }
-
-  if (path.endsWith(".heif")) {
-    return "image/heif";
-  }
-
-  return "image/jpeg";
 }
 
 async function getAccessibleWorkspaceIds(userId: string) {

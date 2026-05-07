@@ -4,7 +4,8 @@ import { getEnv } from "@/lib/env";
 import { normalizeAnalysis } from "@/lib/search";
 import type { GeminiAnalysis } from "@/lib/types";
 
-export const PROMPT_VERSION = "whiteboard-v1";
+export const GEMINI_MODEL = "gemini-3-flash-preview";
+export const PROMPT_VERSION = "whiteboard-v2";
 export const ANALYSIS_VERSION = "1";
 
 const WHITEBOARD_PROMPT = `
@@ -15,10 +16,11 @@ Return only JSON that matches the schema.
 Rules:
 - Preserve the visible whiteboard text as rawText. Keep Korean, English, numbers, and symbols as written.
 - Do not invent unreadable content. Mark uncertain or unreadable parts as "[읽기 어려움]".
-- Summarize the actual content in Korean.
-- Capture useful keywords for search.
-- Describe arrows, boxes, diagrams, relationships, and spatial grouping in visualContext.
-- Add concise warnings for blur, glare, cut-off edges, very small text, low confidence, or privacy-sensitive-looking content.
+- Write the title in concise Korean based only on visible content.
+- Summarize the core content in natural Korean honorific style.
+- Keep the summary focused on what happened, what was decided, and what action is needed.
+- Do not describe image quality, screen layout, glare, UI chrome, or visual context unless it is part of the actual note content.
+- Capture useful keywords for search. Prefer concrete nouns, product names, errors, domains, and actions.
 `.trim();
 
 const responseSchema = {
@@ -31,38 +33,24 @@ const responseSchema = {
       type: Type.ARRAY,
       items: { type: Type.STRING },
     },
-    visualContext: { type: Type.STRING },
-    detectedLanguages: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-    },
-    warnings: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-    },
   },
   required: [
     "title",
     "rawText",
     "summary",
     "keywords",
-    "visualContext",
-    "detectedLanguages",
-    "warnings",
   ],
 };
 
 export async function analyzeWhiteboardImage(input: {
   buffer: Buffer;
   mimeType: string;
-  model?: string;
 }): Promise<{ analysis: GeminiAnalysis; model: string }> {
   const env = getEnv();
-  const model = input.model ?? env.geminiModel;
   const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
 
   const response = await ai.models.generateContent({
-    model,
+    model: GEMINI_MODEL,
     contents: [
       {
         role: "user",
@@ -92,65 +80,8 @@ export async function analyzeWhiteboardImage(input: {
 
   return {
     analysis: normalizeAnalysis(parseJson(text)),
-    model,
+    model: GEMINI_MODEL,
   };
-}
-
-export async function analyzeWhiteboardImageWithFallback(input: {
-  buffer: Buffer;
-  mimeType: string;
-}): Promise<{ analysis: GeminiAnalysis; model: string; fallbackModel: string | null }> {
-  const env = getEnv();
-
-  try {
-    const result = await analyzeWhiteboardImage({
-      ...input,
-      model: env.geminiModel,
-    });
-
-    return {
-      ...result,
-      fallbackModel: null,
-    };
-  } catch (primaryError) {
-    if (!env.geminiFallbackModel || env.geminiFallbackModel === env.geminiModel) {
-      throw primaryError;
-    }
-
-    try {
-      const result = await analyzeWhiteboardImage({
-        ...input,
-        model: env.geminiFallbackModel,
-      });
-
-      return {
-        ...result,
-        fallbackModel: env.geminiFallbackModel,
-      };
-    } catch (fallbackError) {
-      const primaryMessage =
-        primaryError instanceof Error ? primaryError.message : "Primary model failed.";
-      const fallbackMessage =
-        fallbackError instanceof Error ? fallbackError.message : "Fallback model failed.";
-
-      throw new Error(
-        `Gemini analysis failed. Primary: ${primaryMessage} Fallback: ${fallbackMessage}`,
-      );
-    }
-  }
-}
-
-export function shouldRetryWithOriginal(analysis: GeminiAnalysis) {
-  const warningText = analysis.warnings.join(" ").toLowerCase();
-
-  return (
-    warningText.includes("작") ||
-    warningText.includes("small") ||
-    warningText.includes("low") ||
-    warningText.includes("낮") ||
-    warningText.includes("blur") ||
-    warningText.includes("흐")
-  );
 }
 
 function parseJson(text: string) {

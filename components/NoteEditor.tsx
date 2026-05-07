@@ -4,9 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, RefreshCw, Save, Trash2 } from "lucide-react";
 
-import type { NoteWithImageUrl } from "@/lib/types";
+import type { WhiteboardNote } from "@/lib/types";
 
-export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
+type NoteEditorNote = Pick<
+  WhiteboardNote,
+  "id" | "title" | "raw_text" | "summary" | "keywords" | "error_message"
+>;
+
+export function NoteEditor({ note }: { note: NoteEditorNote }) {
   const router = useRouter();
   const [title, setTitle] = useState(note.title);
   const [rawText, setRawText] = useState(note.raw_text);
@@ -129,13 +134,6 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
             onChange={(event) => setSummary(event.target.value)}
           />
         </div>
-
-        {note.visual_context ? (
-          <div className="field">
-            <label>시각적 맥락</label>
-            <p className="privacy-note">{note.visual_context}</p>
-          </div>
-        ) : null}
 
         {note.keywords.length > 0 ? (
           <div className="meta-list">

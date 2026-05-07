@@ -43,7 +43,7 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
 }
 
 function getResultSnippet(note: NotePreview) {
-  return note.summary || note.raw_text || note.visual_context || "분석이 진행 중입니다.";
+  return note.summary || note.raw_text || "분석이 진행 중입니다.";
 }
 
 function highlightText(text: string, query: string) {

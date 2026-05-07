@@ -34,7 +34,6 @@ export type NotePreview = Pick<
   | "title"
   | "raw_text"
   | "summary"
-  | "visual_context"
   | "analysis_image_path"
   | "status"
   | "created_at"
@@ -47,7 +46,4 @@ export type GeminiAnalysis = {
   rawText: string;
   summary: string;
   keywords: string[];
-  visualContext: string;
-  detectedLanguages: string[];
-  warnings: string[];
 };

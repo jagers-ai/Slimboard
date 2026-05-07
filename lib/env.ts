@@ -3,8 +3,6 @@ export type AppEnv = {
   supabaseAnonKey: string;
   supabaseServiceRoleKey: string;
   geminiApiKey: string;
-  geminiModel: string;
-  geminiFallbackModel: string;
   siteUrl: string;
 };
 
@@ -14,8 +12,6 @@ export function getOptionalEnv() {
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL ?? "gemini-3-flash-preview",
-    geminiFallbackModel: process.env.GEMINI_FALLBACK_MODEL ?? "gemini-2.5-flash",
     siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   };
 }
@@ -40,8 +36,6 @@ export function getEnv(): AppEnv {
     supabaseAnonKey: env.supabaseAnonKey!,
     supabaseServiceRoleKey: env.supabaseServiceRoleKey!,
     geminiApiKey: env.geminiApiKey!,
-    geminiModel: env.geminiModel,
-    geminiFallbackModel: env.geminiFallbackModel,
     siteUrl: env.siteUrl,
   };
 }
