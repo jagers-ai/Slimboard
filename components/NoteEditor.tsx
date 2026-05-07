@@ -43,7 +43,7 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
 
   async function analyze() {
     setIsAnalyzing(true);
-    setMessage("Gemini가 다시 분석하고 있어요.");
+    setMessage("다시 분석하고 있습니다.");
 
     try {
       const response = await fetch(`/api/notes/${note.id}/analyze`, {
@@ -98,9 +98,9 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
   return (
     <section className="detail-panel editor-panel">
       <div className="section-heading compact">
-        <span className="eyebrow">Extracted note</span>
+        <span className="eyebrow">정리된 노트</span>
         <h2>원문과 요약</h2>
-        <p className="muted">필요하면 바로 고쳐서 저장할 수 있어.</p>
+        <p className="muted">필요한 내용을 수정한 뒤 저장할 수 있습니다.</p>
       </div>
       <div className="form-stack">
         <div className="field">

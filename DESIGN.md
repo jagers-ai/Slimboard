@@ -19,7 +19,7 @@ tokens:
     amber: "#f59f00"
     green: "#20b486"
   typography:
-    family: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    family: "S-Core Dream, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
     title: "34px/1.16 800"
     section: "24px/1.25 800"
     body: "17px/1.55 500"

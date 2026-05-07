@@ -87,9 +87,9 @@ export function CaptureUploader() {
   return (
     <section className="panel capture-panel" id="capture">
       <div className="section-heading compact">
-        <span className="eyebrow">Capture</span>
+        <span className="eyebrow">저장</span>
         <h2>화이트보드 저장</h2>
-        <p className="muted">사진을 고르면 바로 노트로 바꿔줄게.</p>
+        <p className="muted">사진을 선택하면 노트로 정리해드립니다.</p>
       </div>
 
       <input
@@ -152,11 +152,6 @@ export function CaptureUploader() {
       </button>
 
       {message ? <p className="inline-message">{message}</p> : null}
-
-      <p className="privacy-note">
-        원본 사진은 private cloud storage에 저장되고, 분석용 리사이즈 이미지는 Gemini
-        API로 전송됩니다.
-      </p>
     </section>
   );
 }

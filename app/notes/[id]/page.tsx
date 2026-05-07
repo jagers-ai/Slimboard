@@ -3,13 +3,9 @@ import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
-  Camera,
-  FileText,
-  HomeIcon,
-  Search,
-  ShieldCheck,
 } from "lucide-react";
 
+import { BottomDock } from "@/components/BottomDock";
 import { NoteEditor } from "@/components/NoteEditor";
 import { StatusBadge } from "@/components/StatusBadge";
 import { hasCoreEnv } from "@/lib/env";
@@ -54,7 +50,7 @@ export default async function NotePage({ params }: NotePageProps) {
         <div className="detail-panel">
           <div className="status-row">
             <div>
-              <span className="eyebrow">Original image</span>
+              <span className="eyebrow">원본 이미지</span>
               <h1 className="page-title note-title">{note.title}</h1>
             </div>
             <StatusBadge status={note.status} />
@@ -78,32 +74,5 @@ export default async function NotePage({ params }: NotePageProps) {
 
       <BottomDock active="notes" />
     </main>
-  );
-}
-
-function BottomDock({ active }: { active: "home" | "capture" | "search" | "privacy" | "notes" }) {
-  return (
-    <nav className="bottom-dock" aria-label="주요 이동">
-      <Link className={`dock-item ${active === "home" ? "active" : ""}`} href="/">
-        <HomeIcon size={22} />
-        <span>홈</span>
-      </Link>
-      <Link className={`dock-item ${active === "capture" ? "active" : ""}`} href="/#capture">
-        <Camera size={22} />
-        <span>저장</span>
-      </Link>
-      <Link className={`dock-item ${active === "search" ? "active" : ""}`} href="/#search">
-        <Search size={22} />
-        <span>검색</span>
-      </Link>
-      <Link className={`dock-item ${active === "privacy" ? "active" : ""}`} href="/privacy">
-        <ShieldCheck size={22} />
-        <span>안내</span>
-      </Link>
-      <span className={`dock-item ${active === "notes" ? "active" : ""}`} aria-current="page">
-        <FileText size={22} />
-        <span>노트</span>
-      </span>
-    </nav>
   );
 }

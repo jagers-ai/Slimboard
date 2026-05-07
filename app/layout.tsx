@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Slimboard",
-  description: "Capture whiteboards before they disappear.",
+  description: "화이트보드 사진을 노트로 정리합니다.",
 };
 
 export const viewport: Viewport = {
