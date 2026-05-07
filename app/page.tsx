@@ -1,6 +1,13 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { BookOpen, Search, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  BookOpen,
+  Camera,
+  FileText,
+  HomeIcon,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 
 import { CaptureUploader } from "@/components/CaptureUploader";
 import { SignInButton } from "@/components/SignInButton";
@@ -52,13 +59,11 @@ export default async function Home({ searchParams }: HomeProps) {
       <section className="dashboard">
         <CaptureUploader />
 
-        <div>
-          <div>
-            <span className="eyebrow">Your board memory</span>
-            <h1 className="page-title">화이트보드 노트</h1>
-            <p className="page-subtitle">
-              사진과 원문, 요약을 함께 보관하고 필요한 순간 다시 찾습니다.
-            </p>
+        <section className="section-stack" id="search">
+          <div className="section-heading">
+            <span className="eyebrow">Board memory</span>
+            <h1 className="page-title">저장한 화이트보드</h1>
+            <p className="page-subtitle">원본, 원문, 요약을 한 번에 찾아요.</p>
           </div>
 
           <form className="search-bar" action="/">
@@ -79,7 +84,7 @@ export default async function Home({ searchParams }: HomeProps) {
               {q ? "검색 결과가 없어요." : "첫 화이트보드를 저장해보세요."}
             </div>
           ) : (
-            <div className="notes-grid">
+            <div className="notes-list">
               {notes.map((note) => (
                 <Link className="note-card" href={`/notes/${note.id}`} key={note.id}>
                   <div className="note-thumb">
@@ -98,8 +103,10 @@ export default async function Home({ searchParams }: HomeProps) {
               ))}
             </div>
           )}
-        </div>
+        </section>
       </section>
+
+      <BottomDock active="home" />
     </main>
   );
 }
@@ -117,12 +124,11 @@ function Landing() {
       </header>
 
       <section className="hero">
-        <div className="hero-copy">
+        <div className="hero-card">
           <span className="eyebrow">Whiteboard memory</span>
           <h1>Slimboard</h1>
           <p>
-            회의가 끝나면 지워지는 화이트보드를 사진으로 남기고, Gemini가 원문과
-            요약으로 정리해 검색 가능한 노트로 보관합니다.
+            지워지는 화이트보드를 사진으로 남기고, 원문과 요약까지 바로 정리해요.
           </p>
           <div className="actions">
             <SignInButton />
@@ -132,16 +138,39 @@ function Landing() {
             </Link>
           </div>
         </div>
-        <div className="hero-visual" aria-hidden="true">
-          <div className="hero-note">
-            <strong>원본 사진 + 원문 + 요약</strong>
-            <span>
-              촬영한 이미지는 private cloud storage에 보관되고 Gemini 분석은 서버에서
-              안전하게 실행됩니다.
+
+        <div className="feature-list">
+          <div className="feature-row">
+            <span className="feature-icon">
+              <Camera size={20} />
             </span>
+            <div>
+              <strong>촬영하면 저장</strong>
+              <span>회의 직후 모바일에서 바로 남겨요.</span>
+            </div>
+          </div>
+          <div className="feature-row">
+            <span className="feature-icon">
+              <Sparkles size={20} />
+            </span>
+            <div>
+              <strong>Gemini가 요약</strong>
+              <span>원문, 요약, 키워드를 자동으로 정리해요.</span>
+            </div>
+          </div>
+          <div className="feature-row">
+            <span className="feature-icon">
+              <Search size={20} />
+            </span>
+            <div>
+              <strong>나중에 검색</strong>
+              <span>사진만 남겨도 다시 찾기 쉬워져요.</span>
+            </div>
           </div>
         </div>
       </section>
+
+      <BottomDock active="home" />
     </main>
   );
 }
@@ -164,6 +193,35 @@ function SetupScreen() {
           </Link>
         </div>
       </section>
+
+      <BottomDock active="home" />
     </main>
+  );
+}
+
+function BottomDock({ active }: { active: "home" | "capture" | "search" | "privacy" }) {
+  return (
+    <nav className="bottom-dock" aria-label="주요 이동">
+      <Link className={`dock-item ${active === "home" ? "active" : ""}`} href="/">
+        <HomeIcon size={22} />
+        <span>홈</span>
+      </Link>
+      <a className={`dock-item ${active === "capture" ? "active" : ""}`} href="#capture">
+        <Camera size={22} />
+        <span>저장</span>
+      </a>
+      <a className={`dock-item ${active === "search" ? "active" : ""}`} href="#search">
+        <Search size={22} />
+        <span>검색</span>
+      </a>
+      <Link className={`dock-item ${active === "privacy" ? "active" : ""}`} href="/privacy">
+        <ShieldCheck size={22} />
+        <span>안내</span>
+      </Link>
+      <span className="dock-item muted-dock" aria-hidden="true">
+        <FileText size={22} />
+        <span>노트</span>
+      </span>
+    </nav>
   );
 }

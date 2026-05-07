@@ -85,12 +85,12 @@ export function CaptureUploader() {
   const busy = stage !== "idle";
 
   return (
-    <section className="panel">
-      <span className="eyebrow">Capture</span>
-      <h2>화이트보드 저장</h2>
-      <p className="muted">
-        모바일에서는 바로 촬영하고, 데스크톱에서는 사진 파일을 올릴 수 있어요.
-      </p>
+    <section className="panel capture-panel" id="capture">
+      <div className="section-heading compact">
+        <span className="eyebrow">Capture</span>
+        <h2>화이트보드 저장</h2>
+        <p className="muted">사진을 고르면 바로 노트로 바꿔줄게.</p>
+      </div>
 
       <input
         ref={cameraInputRef}
@@ -109,10 +109,18 @@ export function CaptureUploader() {
       />
 
       <div className="upload-preview">
-        {previewUrl ? <img alt="선택한 화이트보드" src={previewUrl} /> : "사진을 선택해주세요"}
+        {previewUrl ? (
+          <img alt="선택한 화이트보드" src={previewUrl} />
+        ) : (
+          <div className="upload-empty">
+            <ImageUp size={28} />
+            <strong>사진을 선택해주세요</strong>
+            <span>화이트보드가 선명하게 보이는 사진이 좋아요.</span>
+          </div>
+        )}
       </div>
 
-      <div className="actions">
+      <div className="split-actions">
         <button
           className="button"
           type="button"
@@ -138,12 +146,12 @@ export function CaptureUploader() {
         ) : null}
       </div>
 
-      <button className="button primary" type="button" onClick={submit} disabled={!file || busy}>
+      <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
         {busy ? <LoaderCircle size={18} /> : <Sparkles size={18} />}
         {stage === "uploading" ? "저장 중" : stage === "analyzing" ? "분석 중" : "노트 만들기"}
       </button>
 
-      {message ? <p className="muted">{message}</p> : null}
+      {message ? <p className="inline-message">{message}</p> : null}
 
       <p className="privacy-note">
         원본 사진은 private cloud storage에 저장되고, 분석용 리사이즈 이미지는 Gemini

@@ -96,9 +96,12 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
   const busy = isSaving || isAnalyzing || isDeleting;
 
   return (
-    <section className="detail-panel">
-      <span className="eyebrow">Extracted note</span>
-      <h2>원문과 요약</h2>
+    <section className="detail-panel editor-panel">
+      <div className="section-heading compact">
+        <span className="eyebrow">Extracted note</span>
+        <h2>원문과 요약</h2>
+        <p className="muted">필요하면 바로 고쳐서 저장할 수 있어.</p>
+      </div>
       <div className="form-stack">
         <div className="field">
           <label htmlFor="title">제목</label>
@@ -145,7 +148,7 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
           </div>
         ) : null}
 
-        <div className="actions">
+        <div className="split-actions stacked">
           <button className="button primary" type="button" onClick={save} disabled={busy}>
             {isSaving ? <LoaderCircle size={18} /> : <Save size={18} />}
             저장
@@ -160,7 +163,7 @@ export function NoteEditor({ note }: { note: NoteWithImageUrl }) {
           </button>
         </div>
 
-        {message ? <p className="muted">{message}</p> : null}
+        {message ? <p className="inline-message">{message}</p> : null}
       </div>
     </section>
   );

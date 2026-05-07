@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Camera,
+  FileText,
+  HomeIcon,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 
 import { NoteEditor } from "@/components/NoteEditor";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -29,7 +37,7 @@ export default async function NotePage({ params }: NotePageProps) {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className="topbar detail-topbar">
         <Link className="brand" href="/">
           <span className="brand-mark">
             <BookOpen size={19} />
@@ -47,9 +55,7 @@ export default async function NotePage({ params }: NotePageProps) {
           <div className="status-row">
             <div>
               <span className="eyebrow">Original image</span>
-              <h1 className="page-title" style={{ fontSize: "2.2rem" }}>
-                {note.title}
-              </h1>
+              <h1 className="page-title note-title">{note.title}</h1>
             </div>
             <StatusBadge status={note.status} />
           </div>
@@ -69,6 +75,35 @@ export default async function NotePage({ params }: NotePageProps) {
 
         <NoteEditor note={note} />
       </section>
+
+      <BottomDock active="notes" />
     </main>
+  );
+}
+
+function BottomDock({ active }: { active: "home" | "capture" | "search" | "privacy" | "notes" }) {
+  return (
+    <nav className="bottom-dock" aria-label="주요 이동">
+      <Link className={`dock-item ${active === "home" ? "active" : ""}`} href="/">
+        <HomeIcon size={22} />
+        <span>홈</span>
+      </Link>
+      <Link className={`dock-item ${active === "capture" ? "active" : ""}`} href="/#capture">
+        <Camera size={22} />
+        <span>저장</span>
+      </Link>
+      <Link className={`dock-item ${active === "search" ? "active" : ""}`} href="/#search">
+        <Search size={22} />
+        <span>검색</span>
+      </Link>
+      <Link className={`dock-item ${active === "privacy" ? "active" : ""}`} href="/privacy">
+        <ShieldCheck size={22} />
+        <span>안내</span>
+      </Link>
+      <span className={`dock-item ${active === "notes" ? "active" : ""}`} aria-current="page">
+        <FileText size={22} />
+        <span>노트</span>
+      </span>
+    </nav>
   );
 }
