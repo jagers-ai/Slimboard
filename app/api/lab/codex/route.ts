@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return json({ error: "Not found" }, 404);
   }
   if (!isSameOriginLabRequest(request)) {
-    return json({ error: "이 실험 화면에서 다시 시도해주세요." }, 403);
+    return json({ error: "화면을 새로고침한 뒤 다시 시도해주세요." }, 403);
   }
   if (analyzing) {
     return json({ error: "앞선 사진을 분석 중이에요. 완료 후 다시 시도해주세요." }, 409);
@@ -84,13 +84,12 @@ export async function POST(request: Request) {
     const { checkCodexAuth, analyzeWithCodex } = await codexHelper();
     const auth = await checkCodexAuth();
     if (!auth.authenticated || auth.mode !== "chatgpt") {
-      return json({ error: auth.message }, 401);
+      return json({ error: "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요." }, 401);
     }
     const result = await analyzeWithCodex(Buffer.from(await image.arrayBuffer()), image.type);
     return json(result);
-  } catch (error) {
-    // The helper emits sanitized messages, never CLI stderr or auth credentials.
-    return json({ error: error instanceof Error ? error.message : "분석을 완료하지 못했어요." }, 502);
+  } catch {
+    return json({ error: "사진을 정리하지 못했어요. 다시 시도해주세요." }, 502);
   } finally {
     analyzing = false;
   }
