@@ -60,6 +60,28 @@ export function CodexLab() {
     }
   }
 
+  async function useExample() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 700;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.fillStyle = "white";
+    context.fillRect(0, 0, 1200, 700);
+    context.fillStyle = "#111111";
+    context.font = "bold 56px Arial";
+    context.fillText("SLIMBOARD TEST", 70, 100);
+    context.font = "38px Arial";
+    ["Date: 2026-10-20", "Decision: Build a mobile whiteboard app.",
+      "Next: Test OCR and Korean summaries.", "Owner: Billy and Eve"]
+      .forEach((line, index) => context.fillText(line, 70, 210 + index * 100));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) return;
+    setFile(new File([blob], "slimboard-example.png", { type: "image/png" }));
+    setResult(null);
+    setError("");
+  }
+
   const ready = auth?.authenticated && auth.mode === "chatgpt";
   return (
     <main className="app-shell">
@@ -94,6 +116,7 @@ export function CodexLab() {
               <div className="upload-empty"><ImageUp size={28} /><strong>화이트보드 사진을 선택해주세요</strong><span>JPG, PNG, WebP · 최대 10MB</span></div>}
           </div>
           <button className="button full-width" disabled={busy} onClick={() => input.current?.click()}><ImageUp size={18} />사진 선택</button>
+          <button className="button full-width" disabled={busy} onClick={useExample}>예제 사진으로 테스트</button>
           <button className="button primary full-width" disabled={!file || !ready || busy} onClick={analyze}>
             {busy ? <LoaderCircle size={18} /> : <Sparkles size={18} />}{busy ? "내용을 읽고 있어요…" : "ChatGPT 구독으로 분석"}
           </button>

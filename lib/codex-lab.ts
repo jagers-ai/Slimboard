@@ -20,11 +20,23 @@ export function isSameOriginLabRequest(request: Request) {
 
   try {
     const parsed = new URL(origin);
+    const host = request.headers.get("host");
+    if (parsed.origin !== origin || !isCodexLabEnabled(host)) return false;
+
+    if (parsed.protocol === "http:" && parsed.host.toLowerCase() === host?.toLowerCase()) {
+      return true;
+    }
+
+    // A personal Codespace's private forwarding proxy retains the loopback Host.
+    // Accept only that Codespace's exact HTTPS origin; do not trust forwarded
+    // headers supplied by a request, or enable this in production deployments.
+    const name = process.env.CODESPACE_NAME;
+    const domain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
     return (
-      parsed.protocol === "http:" &&
-      parsed.origin === origin &&
-      parsed.host.toLowerCase() === request.headers.get("host")?.toLowerCase() &&
-      isCodexLabEnabled(parsed.host)
+      process.env.CODESPACES === "true" &&
+      Boolean(name && /^[a-z0-9-]+$/.test(name)) &&
+      domain === "app.github.dev" &&
+      origin === `https://${name}-3000.${domain}`
     );
   } catch {
     return false;
