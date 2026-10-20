@@ -66,3 +66,32 @@ test("analysis POST requires matching local Origin and Host", () => inLocalLab((
     assert.equal(isSameOriginLabRequest(request(origin)), false);
   }
 }));
+
+test("Codespace proxy rewrite requires the exact forwarding host and same-origin browser request", () => inLocalLab(() => {
+  process.env.CODESPACES = "true";
+  process.env.CODESPACE_NAME = "slimboard-example-123";
+  process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN = "app.github.dev";
+  const headers = {
+    host: "localhost:3000",
+    origin: "https://localhost:3000",
+    "x-forwarded-host": "slimboard-example-123-3000.app.github.dev",
+    "x-forwarded-proto": "https",
+    "sec-fetch-site": "same-origin",
+  };
+  const request = (overrides = {}) => new Request("http://localhost:3000/api/lab/codex", {
+    method: "POST", headers: { ...headers, ...overrides },
+  });
+  assert.equal(isSameOriginLabRequest(request()), true);
+  for (const overrides of [
+    { origin: "https://evil.com" },
+    { origin: "https://localhost:3001" },
+    { "x-forwarded-host": "other-3000.app.github.dev" },
+    { "x-forwarded-host": "slimboard-example-123-3001.app.github.dev" },
+    { "x-forwarded-proto": "http" },
+    { "sec-fetch-site": "cross-site" },
+    { "sec-fetch-site": "same-site" },
+    { "sec-fetch-site": "" },
+  ]) assert.equal(isSameOriginLabRequest(request(overrides)), false);
+  delete process.env.CODESPACES;
+  assert.equal(isSameOriginLabRequest(request()), false);
+}));

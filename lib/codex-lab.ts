@@ -27,16 +27,24 @@ export function isSameOriginLabRequest(request: Request) {
       return true;
     }
 
-    // A personal Codespace's private forwarding proxy retains the loopback Host.
-    // Accept only that Codespace's exact HTTPS origin; do not trust forwarded
-    // headers supplied by a request, or enable this in production deployments.
+    // A personal Codespace's private proxy retains a loopback Host and may
+    // rewrite the matching Origin to HTTPS loopback. Bind that rewrite to this
+    // Codespace's exact forwarding address and the browser's same-origin signal.
     const name = process.env.CODESPACE_NAME;
     const domain = process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
-    return (
-      process.env.CODESPACES === "true" &&
-      Boolean(name && /^[a-z0-9-]+$/.test(name)) &&
-      domain === "app.github.dev" &&
-      origin === `https://${name}-3000.${domain}`
+    if (
+      process.env.CODESPACES !== "true" ||
+      !name || !/^[a-z0-9-]+$/.test(name) ||
+      domain !== "app.github.dev"
+    ) return false;
+
+    const previewHost = `${name}-3000.${domain}`;
+    return origin === `https://${previewHost}` || (
+      parsed.protocol === "https:" &&
+      parsed.host.toLowerCase() === host?.toLowerCase() &&
+      request.headers.get("x-forwarded-host") === previewHost &&
+      request.headers.get("x-forwarded-proto") === "https" &&
+      request.headers.get("sec-fetch-site") === "same-origin"
     );
   } catch {
     return false;
