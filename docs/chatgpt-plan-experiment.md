@@ -24,9 +24,12 @@ npm run lab:start
 | --- | --- |
 | `SLIMBOARD_CODEX_BIN` | `codex` 대신 실행할 공식 CLI 경로 |
 | `SLIMBOARD_CODEX_HOME` | 로그인·분석에서 함께 사용할 전용 CLI 폴더 |
-| `SLIMBOARD_CODEX_MODEL` | 사용할 모델 이름. 지정하지 않으면 CLI 기본값 사용 |
+| `SLIMBOARD_CODEX_MODEL` | 사용할 모델 이름. 기본값 `gpt-6-astra` |
+| `SLIMBOARD_CODEX_REASONING_EFFORT` | 추론 수준. 기본값 `medium` |
 
-로그인 성공은 OCR 성공이나 특정 모델 권한을 보장하지 않습니다. 실제 사진 분석이 성공한 뒤에만 해당 계정·모델 조합이 동작한다고 판단하세요. 플랜별 사용 한도와 모델 접근 권한은 계정 상태에 따르며, 이 실험은 잔여 한도나 플랜 종류를 조회하지 않습니다. 기본 모델 표시는 실제 모델 이름을 추측하지 않고 `codex-cli-default`로 반환합니다.
+기본 분석 설정은 **GPT-6 Astra / medium**입니다. 매 분석 호출에 `--model gpt-6-astra`와 `model_reasoning_effort="medium"`을 전달하며, 다른 모델로 자동 전환하지 않습니다. 결과 메타데이터의 `model`, `reasoningEffort`에는 요청한 설정을 반환합니다.
+
+로그인 성공은 OCR 성공이나 특정 모델 권한을 보장하지 않습니다. 실제 사진 분석이 성공한 뒤에만 해당 계정·모델 조합이 동작한다고 판단하세요. 플랜별 사용 한도와 모델 접근 권한은 계정 상태에 따르며, 이 실험은 잔여 한도나 플랜 종류를 조회하지 않습니다.
 
 ## 제한과 구현
 
@@ -52,7 +55,7 @@ node scripts/codex-ocr-cli.mjs /absolute/path/whiteboard.png
 npm run lab:test
 ```
 
-`scripts/codex-ocr.mjs`는 `checkCodexAuth(options?)`와 `analyzeWithCodex(buffer, mimeType?, options?)`를 내보냅니다. 옵션은 `binary`, `codexHome`, `model`, `timeoutMs`이며 TypeScript 선언은 `scripts/codex-ocr.d.mts`에 있습니다.
+`scripts/codex-ocr.mjs`는 `checkCodexAuth(options?)`와 `analyzeWithCodex(buffer, mimeType?, options?)`를 내보냅니다. 옵션은 `binary`, `codexHome`, `model`, `reasoningEffort`, `timeoutMs`이며 TypeScript 선언은 `scripts/codex-ocr.d.mts`에 있습니다.
 
 Codex CLI **0.163.0**의 실제 `--help`, `exec --help`, `login --help`, `features list`로 사용 플래그를 확인했습니다. 자동 검증은 실행 가능한 가짜 CLI를 사용해 인증 차단, API 키 미전달, 호출 인자, JSON 검증, 시간 초과와 임시 파일 정리를 확인합니다. 자동 테스트는 실제 로그인·모델 호출을 하지 않으며 OCR 정확도나 계정 사용 가능 여부를 검증하지 않습니다.
 

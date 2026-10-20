@@ -6,6 +6,7 @@ export type CodexOptions = {
   codexHome?: string;
   timeoutMs?: number;
   model?: string;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 };
 export type CodexAuthStatus = {
   available: boolean;
@@ -28,4 +29,4 @@ export function analyzeWithCodex(
   buffer: Buffer,
   mimeType?: string,
   options?: CodexOptions,
-): Promise<{ analysis: CodexAnalysis; model: string; elapsedMs: number }>;
+): Promise<{ analysis: CodexAnalysis; model: string; reasoningEffort: "low" | "medium" | "high" | "xhigh" | "max"; elapsedMs: number }>;

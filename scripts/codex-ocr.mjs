@@ -56,6 +56,10 @@ const AUTH_CONFIG = [
   "-c", 'model_provider="openai"',
 ];
 
+const DEFAULT_MODEL = "gpt-6-astra";
+const DEFAULT_REASONING_EFFORT = "medium";
+const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
 // Flags verified with codex-cli 0.163.0. Ignore user config without bypassing
 // managed requirements, rules, sandboxing, or approval controls.
 const OCR_CONFIG = [
@@ -87,7 +91,8 @@ function configuration(options = {}) {
   const codexHome = options.codexHome ?? process.env.SLIMBOARD_CODEX_HOME
     ?? join(homedir(), ".slimboard", "codex-local");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const model = options.model ?? process.env.SLIMBOARD_CODEX_MODEL;
+  const model = options.model ?? process.env.SLIMBOARD_CODEX_MODEL ?? DEFAULT_MODEL;
+  const reasoningEffort = options.reasoningEffort ?? process.env.SLIMBOARD_CODEX_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT;
   if (typeof binary !== "string" || !binary.trim() || binary.includes("\0")) {
     throw new CodexOcrError("INVALID_OPTIONS", "Codex 실행 파일 설정이 올바르지 않습니다.");
   }
@@ -97,8 +102,11 @@ function configuration(options = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
     throw new CodexOcrError("INVALID_OPTIONS", "제한 시간은 1~180000ms 정수여야 합니다.");
   }
-  if (model !== undefined && (typeof model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/.test(model))) {
+  if (typeof model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/.test(model)) {
     throw new CodexOcrError("INVALID_OPTIONS", "Codex 모델 이름이 올바르지 않습니다.");
+  }
+  if (!REASONING_EFFORTS.includes(reasoningEffort)) {
+    throw new CodexOcrError("INVALID_OPTIONS", "Codex 추론 수준이 올바르지 않습니다.");
   }
   const env = Object.fromEntries(RUNTIME_ENV_KEYS
     .filter((key) => typeof process.env[key] === "string")
@@ -109,7 +117,7 @@ function configuration(options = {}) {
   delete env.OPENAI_API_KEY;
   delete env.CODEX_API_KEY;
   delete env.CODEX_ACCESS_TOKEN;
-  return { binary, env, timeoutMs, model };
+  return { binary, env, timeoutMs, model, reasoningEffort };
 }
 
 function stopProcess(child, signal) {
@@ -272,7 +280,8 @@ export async function analyzeWithCodex(buffer, mimeType, options = {}) {
       "--image", imagePath,
       "--output-schema", schemaPath,
       "--output-last-message", outputPath,
-      ...(config.model ? ["--model", config.model] : []),
+      "--model", config.model,
+      "-c", `model_reasoning_effort="${config.reasoningEffort}"`,
       "-",
     ], { cwd: directory, input: WHITEBOARD_PROMPT });
     if (result.code !== 0) {
@@ -288,7 +297,8 @@ export async function analyzeWithCodex(buffer, mimeType, options = {}) {
     }
     return {
       analysis: validateAnalysis(response),
-      model: config.model ?? "codex-cli-default",
+      model: config.model,
+      reasoningEffort: config.reasoningEffort,
       elapsedMs: Math.round(performance.now() - started),
     };
   } finally {

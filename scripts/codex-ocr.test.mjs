@@ -101,16 +101,19 @@ test("ChatGPT OCR uses dedicated CLI auth, safe env/flags, image/schema/stdin an
   const originalRead = fs.readFile;
   fs.readFile = async function (path, ...args) { reads.push(String(path)); return originalRead.call(this, path, ...args); };
   let result;
-  try { result = await analyzeWithCodex(PNG, "image/png", { binary: fixture.binary, model: "local-test-model" }); }
+  try { result = await analyzeWithCodex(PNG, "image/png", { binary: fixture.binary, model: "local-test-model", reasoningEffort: "high" }); }
   finally { fs.readFile = originalRead; }
   assert.deepEqual(result.analysis, ANALYSIS);
   assert.equal(result.model, "local-test-model");
+  assert.equal(result.reasoningEffort, "high");
   assert.ok(Number.isInteger(result.elapsedMs) && result.elapsedMs >= 0);
   const calls = await fixture.calls();
   assert.equal(calls.length, 2);
   assert.equal(calls[0].kind, "auth");
   const call = calls[1];
   assert.equal(call.kind, "exec");
+  assert.equal(call.args[call.args.indexOf("--model") + 1], "local-test-model");
+  assert.ok(call.args.includes('model_reasoning_effort="high"'));
   for (const invocation of calls) {
     assert.equal(invocation.env.CODEX_HOME, fixture.codexHome);
     for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_BASE_URL", "GEMINI_API_KEY"]) assert.equal(invocation.env[key], undefined);
@@ -141,6 +144,25 @@ test("ChatGPT OCR uses dedicated CLI auth, safe env/flags, image/schema/stdin an
   assert.deepEqual(call.schema.required, ["title", "rawText", "summary", "keywords"]);
   assert.deepEqual(reads, [join(call.cwd, "result.json")]);
   assert.equal(await fs.readFile(fixture.credentialPath, "utf8"), "SENTINEL-NOT-A-CREDENTIAL");
+  await assertCleaned(calls);
+});
+
+test("OCR pins GPT-6 Astra medium by default without changing authentication calls", async (t) => {
+  const fixture = await mockCli(t);
+  withEnv(t, { SLIMBOARD_CODEX_MODEL: undefined, SLIMBOARD_CODEX_REASONING_EFFORT: undefined });
+  const result = await analyzeWithCodex(PNG, "image/png", fixture.options);
+  assert.equal(result.model, "gpt-6-astra");
+  assert.equal(result.reasoningEffort, "medium");
+  const calls = await fixture.calls();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].kind, "auth");
+  assert.ok(!calls[0].args.includes("--model"));
+  assert.ok(!calls[0].args.some((arg) => arg.startsWith("model_reasoning_effort=")));
+  assert.equal(calls[1].kind, "exec");
+  assert.equal(calls[1].args[calls[1].args.indexOf("--model") + 1], "gpt-6-astra");
+  const effort = calls[1].args.indexOf('model_reasoning_effort="medium"');
+  assert.ok(effort > 0);
+  assert.equal(calls[1].args[effort - 1], "-c");
   await assertCleaned(calls);
 });
 
@@ -186,7 +208,9 @@ for (const mode of ["failure", "missing-result", "bad-json", "bad-schema", "extr
       assert.doesNotMatch(error.message, /DO-NOT-EXPOSE|SENTINEL|token=/);
       return true;
     });
-    await assertCleaned(await fixture.calls());
+    const calls = await fixture.calls();
+    assert.equal(calls.filter((call) => call.kind === "exec").length, 1);
+    await assertCleaned(calls);
   });
 }
 
@@ -231,5 +255,8 @@ test("invalid images, MIME mismatches and unbounded options never spawn CLI", as
   }
   await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, timeoutMs: 180_001 }), { code: "INVALID_OPTIONS" });
   await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, model: "--unsafe" }), { code: "INVALID_OPTIONS" });
+  for (const reasoningEffort of ["", "none", "medium\"; unsafe", 42]) {
+    await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, reasoningEffort }), { code: "INVALID_OPTIONS" });
+  }
   assert.deepEqual(await fixture.calls(), []);
 });
