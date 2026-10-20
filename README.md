@@ -32,3 +32,9 @@ the Gemini 3 Flash model may move from preview to stable naming later.
 
 The app stores original and analysis images in the private `whiteboard-images`
 bucket. Browsers only keep temporary previews during capture/upload.
+
+## Local ChatGPT plan experiment
+
+See [the local Codex OCR experiment](docs/chatgpt-plan-experiment.md) to test
+whiteboard transcription and summaries with a personal Codex ChatGPT login.
+This development-only lab does not replace Gemini or run in hosted deployments.

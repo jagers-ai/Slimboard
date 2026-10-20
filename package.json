@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lab:login": "node scripts/codex-lab.mjs login",
+    "lab:status": "node scripts/codex-lab.mjs status",
+    "lab:start": "node scripts/codex-lab.mjs start",
+    "lab:test": "node --test scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",

@@ -1,10 +1,21 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { isCodexLabEnabled } from "@/lib/codex-lab";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request,
   });
+
+  if (["/lab/codex", "/api/lab/codex"].includes(request.nextUrl.pathname)) {
+    if (!isCodexLabEnabled(request.headers.get("host"))) {
+      return new NextResponse("Not found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+    return response;
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

@@ -1,0 +1,97 @@
+import { isCodexLabEnabled, isSameOriginLabRequest } from "@/lib/codex-lab";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+let analyzing = false;
+
+async function codexHelper() {
+  // Keep the local CLI and filesystem helper out of production bundles entirely.
+  if (process.env.NODE_ENV === "development") {
+    return import("@/scripts/codex-ocr.mjs");
+  }
+  throw new Error("The local Codex experiment is disabled.");
+}
+
+function json(body: unknown, status = 200) {
+  return Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+export async function GET(request: Request) {
+  if (!isCodexLabEnabled(request.headers.get("host"))) {
+    return json({ error: "Not found" }, 404);
+  }
+  const { checkCodexAuth } = await codexHelper();
+  return json(await checkCodexAuth());
+}
+
+export async function POST(request: Request) {
+  if (!isCodexLabEnabled(request.headers.get("host"))) {
+    return json({ error: "Not found" }, 404);
+  }
+  if (!isSameOriginLabRequest(request)) {
+    return json({ error: "이 실험 화면에서 다시 시도해주세요." }, 403);
+  }
+  if (analyzing) {
+    return json({ error: "앞선 사진을 분석 중이에요. 완료 후 다시 시도해주세요." }, 409);
+  }
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (contentLength > MAX_IMAGE_BYTES + 1024 * 1024) {
+    return json({ error: "10MB 이하 사진을 선택해주세요." }, 413);
+  }
+
+  analyzing = true;
+  try {
+    // Bound the request while reading, including requests without Content-Length.
+    const reader = request.body?.getReader();
+    if (!reader) return json({ error: "사진을 선택해주세요." }, 400);
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_IMAGE_BYTES + 1024 * 1024) {
+        await reader.cancel();
+        return json({ error: "10MB 이하 사진을 선택해주세요." }, 413);
+      }
+      chunks.push(chunk.value);
+    }
+    const boundedRequest = new Request(request.url, {
+      method: "POST",
+      headers: { "Content-Type": request.headers.get("content-type") ?? "" },
+      body: Buffer.concat(chunks),
+    });
+    let form: FormData;
+    try {
+      form = await boundedRequest.formData();
+    } catch {
+      return json({ error: "사진 업로드 형식을 확인해주세요." }, 400);
+    }
+    const image = form.get("image");
+    if (!(image instanceof File) || !image.size || image.size > MAX_IMAGE_BYTES) {
+      return json({ error: "10MB 이하 사진을 선택해주세요." }, 400);
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(image.type)) {
+      return json({ error: "JPG, PNG, WebP 사진을 선택해주세요." }, 400);
+    }
+
+    const { checkCodexAuth, analyzeWithCodex } = await codexHelper();
+    const auth = await checkCodexAuth();
+    if (!auth.authenticated || auth.mode !== "chatgpt") {
+      return json({ error: auth.message }, 401);
+    }
+    const result = await analyzeWithCodex(Buffer.from(await image.arrayBuffer()), image.type);
+    return json(result);
+  } catch (error) {
+    // The helper emits sanitized messages, never CLI stderr or auth credentials.
+    return json({ error: error instanceof Error ? error.message : "분석을 완료하지 못했어요." }, 502);
+  } finally {
+    analyzing = false;
+  }
+}
