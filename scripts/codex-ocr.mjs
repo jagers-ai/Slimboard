@@ -57,7 +57,7 @@ const AUTH_CONFIG = [
 ];
 
 const DEFAULT_MODEL = "gpt-6-astra";
-const DEFAULT_REASONING_EFFORT = "medium";
+const DEFAULT_REASONING_EFFORT = "low";
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 // Flags verified with codex-cli 0.163.0. Ignore user config without bypassing

@@ -147,12 +147,12 @@ test("ChatGPT OCR uses dedicated CLI auth, safe env/flags, image/schema/stdin an
   await assertCleaned(calls);
 });
 
-test("OCR pins GPT-6 Astra medium by default without changing authentication calls", async (t) => {
+test("OCR pins GPT-6 Astra light by default without changing authentication calls", async (t) => {
   const fixture = await mockCli(t);
   withEnv(t, { SLIMBOARD_CODEX_MODEL: undefined, SLIMBOARD_CODEX_REASONING_EFFORT: undefined });
   const result = await analyzeWithCodex(PNG, "image/png", fixture.options);
   assert.equal(result.model, "gpt-6-astra");
-  assert.equal(result.reasoningEffort, "medium");
+  assert.equal(result.reasoningEffort, "low");
   const calls = await fixture.calls();
   assert.equal(calls.length, 2);
   assert.equal(calls[0].kind, "auth");
@@ -160,7 +160,7 @@ test("OCR pins GPT-6 Astra medium by default without changing authentication cal
   assert.ok(!calls[0].args.some((arg) => arg.startsWith("model_reasoning_effort=")));
   assert.equal(calls[1].kind, "exec");
   assert.equal(calls[1].args[calls[1].args.indexOf("--model") + 1], "gpt-6-astra");
-  const effort = calls[1].args.indexOf('model_reasoning_effort="medium"');
+  const effort = calls[1].args.indexOf('model_reasoning_effort="low"');
   assert.ok(effort > 0);
   assert.equal(calls[1].args[effort - 1], "-c");
   await assertCleaned(calls);

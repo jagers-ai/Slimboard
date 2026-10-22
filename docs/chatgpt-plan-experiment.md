@@ -25,9 +25,9 @@ npm run lab:start
 | `SLIMBOARD_CODEX_BIN` | `codex` 대신 실행할 공식 CLI 경로 |
 | `SLIMBOARD_CODEX_HOME` | 로그인·분석에서 함께 사용할 전용 CLI 폴더 |
 | `SLIMBOARD_CODEX_MODEL` | 사용할 모델 이름. 기본값 `gpt-6-astra` |
-| `SLIMBOARD_CODEX_REASONING_EFFORT` | 추론 수준. 기본값 `medium` |
+| `SLIMBOARD_CODEX_REASONING_EFFORT` | 추론 수준. 기본값 `low` (Light) |
 
-기본 분석 설정은 **GPT-6 Astra / medium**입니다. 매 분석 호출에 `--model gpt-6-astra`와 `model_reasoning_effort="medium"`을 전달하며, 다른 모델로 자동 전환하지 않습니다. 결과 메타데이터의 `model`, `reasoningEffort`에는 요청한 설정을 반환합니다.
+기본 분석 설정은 **GPT-6 Astra / Light (`low`)**입니다. 매 분석 호출에 `--model gpt-6-astra`와 `model_reasoning_effort="low"`을 전달하며, 다른 모델로 자동 전환하지 않습니다. 결과 메타데이터의 `model`, `reasoningEffort`에는 요청한 설정을 반환합니다.
 
 로그인 성공은 OCR 성공이나 특정 모델 권한을 보장하지 않습니다. 실제 사진 분석이 성공한 뒤에만 해당 계정·모델 조합이 동작한다고 판단하세요. 플랜별 사용 한도와 모델 접근 권한은 계정 상태에 따르며, 이 실험은 잔여 한도나 플랜 종류를 조회하지 않습니다.
 
