@@ -97,6 +97,8 @@ export function CaptureUploader() {
         type="file"
         accept="image/*"
         capture="environment"
+        aria-label="화이트보드 촬영"
+        disabled={busy}
         onChange={(event) => handleFile(event.target.files?.[0])}
       />
       <input
@@ -104,6 +106,8 @@ export function CaptureUploader() {
         hidden
         type="file"
         accept="image/*"
+        aria-label="앨범에서 사진 선택"
+        disabled={busy}
         onChange={(event) => handleFile(event.target.files?.[0])}
       />
 
@@ -123,7 +127,11 @@ export function CaptureUploader() {
         <button
           className="button"
           type="button"
-          onClick={() => cameraInputRef.current?.click()}
+          onClick={() => {
+            if (!cameraInputRef.current) return;
+            cameraInputRef.current.value = "";
+            cameraInputRef.current.click();
+          }}
           disabled={busy}
         >
           <Camera size={18} />
@@ -132,14 +140,18 @@ export function CaptureUploader() {
         <button
           className="button"
           type="button"
-          onClick={() => uploadInputRef.current?.click()}
+          onClick={() => {
+            if (!uploadInputRef.current) return;
+            uploadInputRef.current.value = "";
+            uploadInputRef.current.click();
+          }}
           disabled={busy}
         >
           <ImageUp size={18} />
           업로드
         </button>
         {file ? (
-          <button className="button icon-only" type="button" onClick={clearFile} disabled={busy}>
+          <button className="button icon-only" type="button" aria-label="선택한 사진 지우기" onClick={clearFile} disabled={busy}>
             <X size={18} />
           </button>
         ) : null}

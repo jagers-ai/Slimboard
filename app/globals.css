@@ -6,7 +6,7 @@
   --surface-soft: #f8fafc;
   --ink: #1f2933;
   --ink-strong: #111827;
-  --muted: #8b95a1;
+  --muted: #667384;
   --muted-soft: #b8c0c9;
   --line: #edf0f3;
   --blue: #3182f6;
@@ -20,6 +20,11 @@
   --green-soft: #e8fbf4;
   --shadow: 0 16px 42px rgba(31, 41, 51, 0.08);
   --dock-shadow: 0 14px 44px rgba(31, 41, 51, 0.16);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --page-gutter: 20px;
 }
 
 * {
@@ -30,11 +35,15 @@ html {
   background: var(--bg);
   color: var(--ink);
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100svh;
   background: var(--bg);
   font-family:
     "S-Core Dream", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
@@ -55,14 +64,24 @@ textarea {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 4px;
 }
 
 .app-shell {
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  min-height: 100svh;
   margin: 0 auto;
-  padding: 18px 20px 122px;
+  padding: max(18px, var(--safe-top)) max(var(--page-gutter), var(--safe-right))
+    calc(122px + var(--safe-bottom)) max(var(--page-gutter), var(--safe-left));
 }
 
 .topbar {
@@ -262,6 +281,11 @@ button {
 
 .split-actions {
   margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.split-actions .button:not(.icon-only) {
+  flex: 1 1 110px;
 }
 
 .split-actions.stacked {
@@ -273,7 +297,7 @@ button {
   min-height: 54px;
   border: 0;
   border-radius: 18px;
-  padding: 0 18px;
+  padding: 12px 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -281,17 +305,28 @@ button {
   color: var(--ink);
   background: #eef1f4;
   font-weight: 800;
-  white-space: nowrap;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.button svg {
+  flex: 0 0 auto;
 }
 
 .button.primary {
-  background: var(--blue);
+  background: var(--blue-dark);
   color: white;
 }
 
-.button.primary:hover {
-  background: var(--blue-dark);
+@media (hover: hover) and (pointer: fine) {
+  .button.primary:hover { background: #155bc4; }
 }
+
+.button:active:not(:disabled) { filter: brightness(0.95); }
 
 .button.danger {
   background: var(--red-soft);
@@ -333,7 +368,9 @@ button {
 .upload-preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  display: block;
+  min-height: 0;
 }
 
 .upload-empty {
@@ -384,6 +421,7 @@ button {
   padding: 15px 16px;
   outline: none;
   font-weight: 650;
+  font-size: 1rem;
 }
 
 .textarea {
@@ -594,8 +632,8 @@ button {
 }
 
 .search-clear-button {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   border-radius: 999px;
   display: grid;
@@ -631,7 +669,8 @@ button {
 }
 
 .recent-searches-head button {
-  padding: 0;
+  min-height: 48px;
+  padding: 8px;
   color: #9da4ad;
   font-size: 1rem;
   font-weight: 700;
@@ -659,8 +698,8 @@ button {
 }
 
 .recent-search-row button {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
@@ -831,9 +870,9 @@ button {
 .bottom-dock {
   position: fixed;
   left: 50%;
-  bottom: max(18px, env(safe-area-inset-bottom));
+  bottom: max(18px, var(--safe-bottom));
   z-index: 20;
-  width: min(calc(100% - 28px), 398px);
+  width: min(calc(100% - max(14px, var(--safe-left)) - max(14px, var(--safe-right))), 398px);
   min-height: 78px;
   transform: translateX(-50%);
   border-radius: 999px;
@@ -844,6 +883,7 @@ button {
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--dock-shadow);
   backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .dock-item {
@@ -878,10 +918,7 @@ button {
 }
 
 @media (max-width: 360px) {
-  .app-shell {
-    padding-right: 16px;
-    padding-left: 16px;
-  }
+  :root { --page-gutter: 16px; }
 
   .page-title,
   .hero h1,
@@ -898,4 +935,63 @@ button {
   .split-actions .button {
     width: 100%;
   }
+}
+
+/* One mobile flow across Safari and Chrome; no device-name detection. */
+.camera-shell {
+  max-width: 480px;
+  padding-bottom: calc(28px + var(--safe-bottom));
+}
+
+.camera-shell .topbar { margin-bottom: 16px; }
+.camera-shell .section-stack { gap: 20px; }
+.camera-intro { display: grid; gap: 8px; }
+.camera-intro h1 {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 2rem;
+  line-height: 1.25;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.camera-intro .muted { max-width: 28em; }
+.camera-shell .panel { padding: 18px; min-width: 0; }
+.camera-shell .capture-panel { display: grid; gap: 12px; }
+.camera-shell .upload-preview {
+  margin: 0;
+  max-height: 320px;
+  max-height: min(320px, 38svh);
+  border-radius: 20px;
+}
+.camera-shell .upload-empty { padding: 20px; }
+.photo-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.photo-actions .button { flex: 1 1 8em; }
+.camera-shell .inline-message { margin-top: 0; }
+.analysis-result {
+  scroll-margin-top: max(20px, var(--safe-top));
+  overflow-wrap: anywhere;
+}
+.analysis-result h2 { line-height: 1.4; }
+.analysis-result p { margin: 0; line-height: 1.65; white-space: pre-wrap; }
+.analysis-result dl { display: grid; gap: 18px; margin: 0; }
+.analysis-result dt { font-weight: 800; margin-bottom: 6px; }
+.analysis-result dd { margin: 0; }
+.analysis-keywords { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; list-style: none; margin: 0; }
+.analysis-keywords .chip { color: #155bc4; font-weight: 650; line-height: 1.5; max-width: 100%; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.spinner { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (orientation: landscape) and (max-height: 540px) {
+  .camera-shell { max-width: 600px; }
+  .camera-shell .topbar { min-height: 40px; margin-bottom: 8px; }
+  .camera-shell .upload-preview { aspect-ratio: 16 / 7; max-height: 42svh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .spinner, .skeleton-block::after { animation: none; }
 }

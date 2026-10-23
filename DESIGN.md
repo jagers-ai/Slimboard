@@ -10,7 +10,7 @@ tokens:
     surfaceSubtle: "#f8fafc"
     text: "#1f2933"
     textStrong: "#111827"
-    muted: "#8b95a1"
+    muted: "#667384"
     mutedSoft: "#b8c0c9"
     line: "#edf0f3"
     blue: "#3182f6"
@@ -57,6 +57,8 @@ Slimboard is a mobile-first web app for saving whiteboard photos as searchable n
 - Favor large rounded cards, clear section titles, and short Korean labels.
 - Build screens as vertical mobile flows, not desktop grids.
 - Keep actions thumb-friendly with at least 48px touch targets.
+- Respect all four safe-area insets on iOS and Android. Keep zoom enabled and let long button labels wrap.
+- Keep the camera lab as one scrollable column, with separate camera and album controls and no fixed action bar.
 - Use list rows for saved notes and information sections.
 
 ## Do

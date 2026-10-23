@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Camera, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { BookOpen, Camera, ImageUp, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { prepareCameraPhoto } from "@/lib/prepare-camera-photo";
 
 type AuthStatus = { ready: boolean };
 type AnalysisResult = {
@@ -20,6 +21,8 @@ export function CodexLab() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const albumInput = useRef<HTMLInputElement>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
 
   async function refreshAuth() {
     setChecking(true);
@@ -35,7 +38,15 @@ export function CodexLab() {
     }
   }
 
-  useEffect(() => { void refreshAuth(); }, []);
+  useEffect(() => {
+    // Already-authorized browsers may inherit the invitation fragment through
+    // a redirect. Keep it out of the camera screen's address and share sheet.
+    if (new URLSearchParams(window.location.hash.slice(1)).has("invite")) {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
+    void refreshAuth();
+  }, []);
+  useEffect(() => { if (result) resultHeading.current?.focus({ preventScroll: true }); }, [result]);
   useEffect(() => {
     if (!file) { setPreview(null); return; }
     const url = URL.createObjectURL(file);
@@ -62,7 +73,9 @@ export function CodexLab() {
       if (!response.ok) throw new Error(payload.error ?? "분석하지 못했어요.");
       setResult(payload);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "분석하지 못했어요.");
+      setError(failure instanceof TypeError
+        ? "연결이 끊겼어요. 인터넷 연결을 확인한 뒤 다시 시도해주세요."
+        : failure instanceof Error ? failure.message : "분석하지 못했어요.");
     } finally {
       setBusy(false);
     }
@@ -72,82 +85,76 @@ export function CodexLab() {
     setPreparing(true);
     setResult(null);
     setError("");
-    const url = URL.createObjectURL(selected);
     try {
-      if (!selected.size || selected.size > 40 * 1024 * 1024) {
-        throw new Error("사진 용량이 너무 커요. 해상도를 낮춰 다시 촬영해주세요.");
-      }
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-      // Normalize camera formats, orientation and size before uploading.
-      const scale = Math.min(1, 3000 / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("사진을 읽지 못했어요. 다시 촬영해주세요.");
-      context.fillStyle = "white";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-      if (!blob || blob.size > 10 * 1024 * 1024) throw new Error("사진 용량이 너무 커요. 다시 촬영해주세요.");
-      setFile(new File([blob], "whiteboard.jpg", { type: "image/jpeg" }));
+      setFile(await prepareCameraPhoto(selected));
     } catch (failure) {
       setFile(null);
-      setError(failure instanceof Error && failure.message.includes("촬영")
-        ? failure.message : "사진을 읽지 못했어요. 다시 촬영해주세요.");
+      setError(failure instanceof Error ? failure.message : "사진을 읽지 못했어요. 다시 촬영해주세요.");
     } finally {
-      URL.revokeObjectURL(url);
       setPreparing(false);
     }
   }
 
   const ready = auth?.ready;
   const pending = busy || preparing;
+  const status = busy ? "내용을 읽고 있어요…" : preparing ? "사진 준비 중…" : checking ? "준비 중…" : result ? "노트가 완성되었어요." : "";
+  function choosePhoto(element: HTMLInputElement | null) {
+    if (!element || pending) return;
+    element.value = "";
+    element.click();
+  }
   return (
-    <main className="app-shell">
+    <main className="app-shell camera-shell">
       <header className="topbar">
         <span className="brand"><span className="brand-mark"><BookOpen size={19} /></span>Slimboard</span>
       </header>
       <div className="section-stack">
-        <section className="panel">
-          <div className="section-heading">
-            <h1 className="note-title">사진을 노트로</h1>
-            <p className="muted">화이트보드를 찍으면 글과 핵심 내용을 정리해드려요.</p>
-          </div>
+        <section className="camera-intro" aria-labelledby="camera-title">
+          <h1 id="camera-title">사진을 노트로</h1>
+          <p className="muted">화이트보드를 찍으면 글과 핵심 내용을 정리해드려요.</p>
           {!checking && !ready ? <div className="form-stack" role="status">
             <p className="inline-message">지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요.</p>
             <button className="button" onClick={refreshAuth} disabled={pending}><RefreshCw size={18} />다시 연결</button>
           </div> : null}
         </section>
-        <section className="panel capture-panel">
+        <section className="panel capture-panel" aria-label="사진 선택과 분석" aria-busy={pending}>
           <input ref={input} hidden type="file" accept="image/*" capture="environment" aria-label="화이트보드 촬영" disabled={pending}
             onChange={(event) => {
               const selected = event.target.files?.[0];
               if (!selected) return;
               void preparePhoto(selected);
             }} />
+          <input ref={albumInput} hidden type="file" accept="image/*" aria-label="앨범에서 사진 선택" disabled={pending}
+            onChange={(event) => {
+              const selected = event.target.files?.[0];
+              if (selected) void preparePhoto(selected);
+            }} />
           <div className="upload-preview">
             {preview ? <img src={preview} alt="촬영한 화이트보드" style={{ objectFit: "contain" }} /> :
               <div className="upload-empty"><Camera size={28} /><strong>화이트보드를 촬영해주세요</strong></div>}
           </div>
-          <button className="button full-width" disabled={pending} onClick={() => {
-            if (!input.current) return;
-            input.current.value = "";
-            input.current.click();
-          }}><Camera size={18} />{file ? "다시 촬영" : "사진 촬영"}</button>
-          <button className="button primary full-width" disabled={!file || !ready || pending || checking} onClick={analyze}>
-            {pending || checking ? <LoaderCircle size={18} /> : <Sparkles size={18} />}{busy ? "내용을 읽고 있어요…" : preparing ? "사진 준비 중…" : checking ? "준비 중…" : "노트 만들기"}
+          <div className="photo-actions">
+            <button type="button" className="button" disabled={pending} onClick={() => choosePhoto(input.current)}>
+              <Camera size={18} aria-hidden="true" />{file ? "다시 촬영" : "사진 촬영"}
+            </button>
+            <button type="button" className="button" disabled={pending} onClick={() => choosePhoto(albumInput.current)}>
+              <ImageUp size={18} aria-hidden="true" />앨범 선택
+            </button>
+          </div>
+          <button type="button" className="button primary full-width" disabled={!file || !ready || pending || checking} onClick={analyze}>
+            {pending || checking ? <LoaderCircle size={18} className="spinner" aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}{pending || checking ? status : "노트 만들기"}
           </button>
           {error ? <p className="inline-message" role="alert">{error}</p> : null}
         </section>
-        {result ? <section className="panel form-stack" aria-live="polite">
+        <p className="sr-only" role="status" aria-atomic="true">{status}</p>
+        {result ? <section className="panel form-stack analysis-result" aria-labelledby="analysis-title">
           <span className="eyebrow">분석 완료{result.elapsedMs ? ` · ${(result.elapsedMs / 1000).toFixed(1)}초` : ""}</span>
-          <h2>{result.analysis.title}</h2>
-          <strong>핵심 요약</strong><p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{result.analysis.summary}</p>
-          <strong>사진 속 원문</strong><p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{result.analysis.rawText}</p>
-          <strong>검색 키워드</strong><p className="muted">{result.analysis.keywords.join(", ")}</p>
+          <h2 id="analysis-title" ref={resultHeading} tabIndex={-1}>{result.analysis.title}</h2>
+          <dl>
+            <div><dt>핵심 요약</dt><dd><p>{result.analysis.summary}</p></dd></div>
+            <div><dt>사진 속 원문</dt><dd><p>{result.analysis.rawText}</p></dd></div>
+            <div><dt>검색 키워드</dt><dd><ul className="analysis-keywords">{result.analysis.keywords.map((word) => <li className="chip" key={word}>{word}</li>)}</ul></dd></div>
+          </dl>
         </section> : null}
       </div>
     </main>

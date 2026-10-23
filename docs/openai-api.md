@@ -52,8 +52,16 @@ npm run lab:phone
 
 Open the complete HTTPS invitation printed by the second command on your phone.
 Choose **사진 촬영**, take a photo with the rear camera, then choose **노트 만들기**.
+Choose **앨범 선택** to use an existing photo instead. Both controls allow
+selecting the same photo again after an error or cancellation.
 On desktop the same button opens a file picker. The phone's browser determines
 its camera UI; the rear-camera capture attribute remains enabled.
+
+The layout supports mobile Safari and Android Chrome without device detection.
+Safe-area insets protect content near display cutouts and the home indicator;
+small-viewport units keep the layout stable as browser toolbars change. Zoom is
+enabled, buttons wrap and stack with larger text, and reduced-motion preferences
+are respected. See [mobile validation](mobile-testing.md) for the verified scope.
 
 The lab stays on `127.0.0.1:3000`. Only an authenticated invitation gateway on
 `127.0.0.1:3001` is tunneled. Each invitation expires after four hours and permits
@@ -62,9 +70,12 @@ The gateway requires an exact HTTPS origin for writes, uses a signed HttpOnly,
 Secure, SameSite=Strict cookie, and exposes only the camera lab and its assets.
 The API key stays in the Next server; the tunnel subprocess does not inherit it.
 The invite fragment is exchanged for a cookie and removed from the address bar.
-The lab disables Next's React debug channel because the gateway does not expose
-development WebSockets. Without that setting, Next 16.4 waits for debug data
-before making the camera controls interactive.
+The lab disables Next's React debug channel. The gateway never forwards
+development WebSocket traffic to Next. It holds an inert, authenticated HMR
+connection so Next's client does not periodically reload and discard the photo.
+This endpoint discards messages, accepts at most 4KiB per message, requires the
+same invitation cookie and exact HTTPS Origin, and closes at session expiry.
+No source, debug information, commands, or application responses pass through it.
 
 Keep the entire invitation private. It is a bearer link: anyone receiving it can
 use the remaining allowance. Keep the Mac awake and both commands running.

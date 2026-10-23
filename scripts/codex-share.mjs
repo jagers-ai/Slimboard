@@ -6,6 +6,7 @@ import { chmod, mkdir, realpath, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
 
 export const SHARE_PORT = 3001;
 export const SESSION_MS = 4 * 60 * 60 * 1000;
@@ -226,7 +227,32 @@ export function createPreviewServer({ config, session, now = Date.now, upstreamP
   server.requestTimeout = 20_000;
   server.headersTimeout = 15_000;
   server.maxConnections = 32;
-  server.on("upgrade", (_req, socket) => socket.destroy());
+  // Next's browser client reloads after repeated HMR connection failures.
+  // Terminate that connection here: never connect it to the development server,
+  // send source/debug data, or execute/forward any client message.
+  const idleSockets = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: false });
+  server.on("upgrade", (req, socket, head) => {
+    socket.on("error", () => {});
+    const reject = (status) => socket.end(`HTTP/1.1 ${status} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`, () => socket.destroy());
+    if (!validHost(req.headers.host)) return reject(400);
+    if (!config.labOnly || !config.origin || req.method !== "GET" || req.url.length > 4096 || req.url.split("?")[0] !== "/_next/hmr") return reject(404);
+    if (now() >= session.expiresAt) return reject(410);
+    if (!authenticatedPreview(req.headers.cookie, session, now())) return reject(401);
+    if (req.headers.origin !== config.origin) return reject(403);
+    idleSockets.handleUpgrade(req, socket, head, (client) => {
+      const expires = setTimeout(() => client.terminate(), Math.max(1, session.expiresAt - now()));
+      expires.unref();
+      client.on("error", () => {});
+      client.on("message", () => {});
+      client.once("close", () => clearTimeout(expires));
+    });
+  });
+  const closeHttpConnections = server.closeAllConnections.bind(server);
+  server.closeAllConnections = () => {
+    for (const client of idleSockets.clients) client.terminate();
+    closeHttpConnections();
+  };
+  server.once("close", () => idleSockets.close());
   return server;
 }
 

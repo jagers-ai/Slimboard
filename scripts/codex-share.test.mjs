@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { WebSocket } from "ws";
+import { once } from "node:events";
 import { tunnelEnvironment } from "./phone-preview.mjs";
 import {
   MAX_ANALYSES, SESSION_MS, allowedPreviewPath, authenticatedPreview,
@@ -269,4 +271,83 @@ test("the HTTPS tunnel process never receives application credentials", () => {
   assert.deepEqual(tunnelEnvironment({ PATH: "/bin", HOME: "/home/test", TMPDIR: "/tmp", OPENAI_API_KEY: "secret", SUPABASE_SERVICE_ROLE_KEY: "secret", NODE_OPTIONS: "--inspect", CLOUDFLARE_API_TOKEN: "secret" }), {
     PATH: "/bin", HOME: "/home/test", TMPDIR: "/tmp",
   });
+});
+
+function previewSocket(f, path = "/_next/hmr?id=test", headers = {}) {
+  return new WebSocket(`ws://127.0.0.1:${f.port}${path}`, { headers: {
+    host: "127.0.0.1:3001", origin: phone.origin, cookie: f.cookie, ...headers,
+  } });
+}
+
+test("phone HMR placeholder remains connected without forwarding messages to Next", async (t) => {
+  const f = await fixture(t, undefined, phone);
+  const client = previewSocket(f);
+  t.after(() => client.terminate());
+  await once(client, "open");
+  let received = 0;
+  client.on("message", () => received++);
+  client.send(JSON.stringify({ event: "mcp-get-error-state" }));
+  const pong = once(client, "pong");
+  client.ping();
+  await pong;
+  assert.equal(client.readyState, WebSocket.OPEN);
+  assert.equal(f.seen.length, 0);
+  assert.equal(received, 0);
+  assert.equal(f.session.analyses, 0);
+});
+
+test("phone WebSocket requires the invite cookie, exact Origin and Host, path, and unexpired session", async (t) => {
+  const f = await fixture(t, undefined, phone);
+  for (const [path, headers, status] of [
+    ["/_next/hmr", { cookie: "" }, 401],
+    ["/_next/hmr", { origin: "https://evil.com" }, 403],
+    ["/_next/hmr", { origin: "" }, 403],
+    ["/_next/hmr", { host: "evil.com" }, 400],
+    ["/api/lab/codex", {}, 404],
+    ["/_next/hmr/../admin", {}, 404],
+  ]) {
+    await new Promise((resolve, reject) => {
+      const client = previewSocket(f, path, headers);
+      client.on("error", () => {});
+      client.on("open", () => { client.terminate(); reject(new Error("Unexpected upgrade")); });
+      client.on("unexpected-response", (_req, res) => {
+        res.resume(); client.terminate();
+        try { assert.equal(res.statusCode, status); resolve(); } catch (error) { reject(error); }
+      });
+    });
+  }
+  f.advance(SESSION_MS);
+  await new Promise((resolve, reject) => {
+    const client = previewSocket(f);
+    client.on("error", () => {});
+    client.on("unexpected-response", (_req, res) => {
+      res.resume(); client.terminate();
+      try { assert.equal(res.statusCode, 410); resolve(); } catch (error) { reject(error); }
+    });
+  });
+  assert.equal(f.seen.length, 0);
+});
+
+test("oversized WebSocket messages close the inert connection without reaching the app", async (t) => {
+  const f = await fixture(t, undefined, phone);
+  const client = previewSocket(f);
+  t.after(() => client.terminate());
+  await once(client, "open");
+  const closed = once(client, "close");
+  client.send("x".repeat(4097));
+  const [code] = await closed;
+  assert.equal(code, 1009);
+  assert.equal(f.seen.length, 0);
+});
+
+test("an already-open phone WebSocket closes at the invitation deadline", async (t) => {
+  const f = await fixture(t, undefined, phone);
+  f.session.expiresAt = 1_000_000 + 100;
+  f.cookie = previewCookie(f.session, 1_000_000).split(";")[0];
+  const client = previewSocket(f);
+  t.after(() => client.terminate());
+  await once(client, "open");
+  await once(client, "close");
+  assert.equal(client.readyState, WebSocket.CLOSED);
+  assert.equal(f.seen.length, 0);
 });
