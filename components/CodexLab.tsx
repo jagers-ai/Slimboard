@@ -52,6 +52,12 @@ export function CodexLab() {
       const form = new FormData();
       form.append("image", file);
       const response = await fetch("/api/lab/codex", { method: "POST", body: form });
+      if (!response.headers.get("content-type")?.includes("application/json")) {
+        throw new Error(response.status === 401 || response.status === 410
+          ? "초대 링크가 만료되었어요. 새 초대 링크로 다시 열어주세요."
+          : response.status === 429 ? "이번 초대의 분석 횟수를 모두 사용했어요."
+          : "사진을 정리하지 못했어요. 잠시 후 다시 시도해주세요.");
+      }
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "분석하지 못했어요.");
       setResult(payload);

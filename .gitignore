@@ -9,3 +9,5 @@ coverage
 supabase/.branches
 supabase/.temp
 .vercel
+.DS_Store
+.local-checks/

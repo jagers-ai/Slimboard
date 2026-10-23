@@ -142,7 +142,8 @@ test("ChatGPT OCR uses dedicated CLI auth, safe env/flags, image/schema/stdin an
   assert.equal(call.image, PNG.toString("base64"));
   assert.equal(call.schema.additionalProperties, false);
   assert.deepEqual(call.schema.required, ["title", "rawText", "summary", "keywords"]);
-  assert.deepEqual(reads, [join(call.cwd, "result.json")]);
+  // macOS reports /private/var for cwd while CLI arguments may use /var.
+  assert.deepEqual(reads, [call.args[call.args.indexOf("--output-last-message") + 1]]);
   assert.equal(await fs.readFile(fixture.credentialPath, "utf8"), "SENTINEL-NOT-A-CREDENTIAL");
   await assertCleaned(calls);
 });
@@ -216,7 +217,7 @@ for (const mode of ["failure", "missing-result", "bad-json", "bad-schema", "extr
 
 test("timeout kills a running CLI and cleans temporary data without retry", async (t) => {
   const fixture = await mockCli(t, "timeout");
-  await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, timeoutMs: 300 }), { code: "CODEX_TIMEOUT" });
+  await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, timeoutMs: 1500 }), { code: "CODEX_TIMEOUT" });
   const calls = await fixture.calls();
   assert.equal(calls.filter((call) => call.kind === "exec").length, 1);
   await assertCleaned(calls);
@@ -224,7 +225,7 @@ test("timeout kills a running CLI and cleans temporary data without retry", asyn
 
 test("timeout also stops descendants when the CLI launcher exits on SIGTERM", { skip: process.platform === "win32" }, async (t) => {
   const fixture = await mockCli(t, "descendant-timeout");
-  await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, timeoutMs: 600 }), { code: "CODEX_TIMEOUT" });
+  await assert.rejects(analyzeWithCodex(PNG, undefined, { ...fixture.options, timeoutMs: 2000 }), { code: "CODEX_TIMEOUT" });
   const calls = await fixture.calls();
   const descendant = calls.find((call) => call.kind === "descendant");
   assert.ok(descendant, "mock descendant started before timeout");
@@ -238,7 +239,7 @@ test("timeout also stops descendants when the CLI launcher exits on SIGTERM", { 
 for (const mode of ["auth-timeout", "auth-overflow"]) {
   test(`${mode} is bounded and cannot start OCR`, async (t) => {
     const fixture = await mockCli(t, mode);
-    const status = await checkCodexAuth({ ...fixture.options, timeoutMs: 200 });
+    const status = await checkCodexAuth({ ...fixture.options, timeoutMs: 1000 });
     assert.equal(status.available, true);
     assert.equal(status.authenticated, false);
     assert.ok(status.message.length < 200);

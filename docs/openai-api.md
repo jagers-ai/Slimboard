@@ -38,17 +38,54 @@ Supabase storage.
 
 ## Phone testing
 
-The capture button requests the rear camera on supported phones. Test the normal
-signed-in app over HTTPS for mobile use. `localhost` on a phone refers to the
-phone itself, not the Mac. The standalone lab remains loopback-only and is not
-an unauthenticated public API. A phone-accessible deployment needs the server
-key configured privately and the normal Supabase sign-in.
+For temporary phone testing on a Mac, install Node.js 24 and
+[cloudflared](https://developers.cloudflare.com/tunnel/downloads/), then run:
+
+```bash
+# Terminal 1, inside the repository
+npm ci
+npm run lab:start
+
+# Terminal 2, inside the same repository
+npm run lab:phone
+```
+
+Open the complete HTTPS invitation printed by the second command on your phone.
+Choose **사진 촬영**, take a photo with the rear camera, then choose **노트 만들기**.
+On desktop the same button opens a file picker. The phone's browser determines
+its camera UI; the rear-camera capture attribute remains enabled.
+
+The lab stays on `127.0.0.1:3000`. Only an authenticated invitation gateway on
+`127.0.0.1:3001` is tunneled. Each invitation expires after four hours and permits
+at most ten submitted analysis requests (including unsuccessful requests).
+The gateway requires an exact HTTPS origin for writes, uses a signed HttpOnly,
+Secure, SameSite=Strict cookie, and exposes only the camera lab and its assets.
+The API key stays in the Next server; the tunnel subprocess does not inherit it.
+The invite fragment is exchanged for a cookie and removed from the address bar.
+The lab disables Next's React debug channel because the gateway does not expose
+development WebSockets. Without that setting, Next 16.4 waits for debug data
+before making the camera controls interactive.
+
+Keep the entire invitation private. It is a bearer link: anyone receiving it can
+use the remaining allowance. Keep the Mac awake and both commands running.
+Ctrl+C in Terminal 2 closes phone access; rerunning it creates a new URL and
+invitation. No Cloudflare account, domain, router port forwarding, or Supabase
+setup is needed for this temporary lab. Cloudflare carries the HTTPS test traffic.
+See [Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+`localhost` on a phone refers to the phone itself. A Mac LAN IP does not bypass
+the lab's loopback restriction. Normal signed-in app use and saved notes still
+require Supabase and a separate production deployment.
 
 ## Validation
 
 `npm run lab:test` covers the API request/response contract, malformed photos,
-provider errors, timeouts, and existing lab access controls. `npm run typecheck`
+provider errors, timeouts, invitation limits, and lab access controls. `npm run typecheck`
 checks the app. Tests use fake transport and do not spend API credits.
+
+With the lab running, `npm run lab:smoke` also checks the actual HTTP server's
+status, page, external Host rejection, cross-origin rejection and invalid-image
+rejection. It sends no valid image and does not call the OpenAI API.
 
 The files `scripts/codex-ocr*` and `scripts/codex-lab.mjs` retain the previous
 OAuth experiment for historical comparison. They are not imported by the app.

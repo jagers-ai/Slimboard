@@ -1,5 +1,10 @@
 # Temporary internal development preview
 
+For the current Mac camera lab, use `npm run lab:phone` as described in
+[OpenAI API setup](openai-api.md#phone-testing). It uses the same invitation
+protections with an HTTPS tunnel and exposes only the camera lab. The
+Codespaces-specific instructions below remain for the earlier cloud workflow.
+
 This is a short-lived invitation for a trusted development tester, using the
 same application and the existing local experiment. It is not production
 hosting or a public inference API. The ordinary development server on port

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer, request } from "node:http";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { tunnelEnvironment } from "./phone-preview.mjs";
 import {
   MAX_ANALYSES, SESSION_MS, allowedPreviewPath, authenticatedPreview,
   createPreviewServer, newPreviewSession, persistPreviewSession,
@@ -30,7 +32,7 @@ function call(port, path, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
-async function fixture(t, onRequest) {
+async function fixture(t, onRequest, preview = config) {
   let clock = 1_000_000;
   const session = newPreviewSession(clock);
   const seen = [];
@@ -44,7 +46,7 @@ async function fixture(t, onRequest) {
     res.end(JSON.stringify({ ok: true }));
   });
   const upstreamPort = await listen(upstream);
-  const proxy = createPreviewServer({ config, session, now: () => clock, upstreamPort });
+  const proxy = createPreviewServer({ config: preview, session, now: () => clock, upstreamPort });
   const port = await listen(proxy);
   t.after(async () => { await close(proxy); await close(upstream); });
   const cookie = previewCookie(session, clock).split(";")[0];
@@ -85,7 +87,10 @@ test("session files are private and cannot be placed in the repository", async (
     assert.equal((await stat(directory)).mode & 0o777, 0o700);
     assert.equal((await stat(file)).mode & 0o777, 0o600);
     assert.equal(JSON.parse(await readFile(file, "utf8")).inviteToken, session.inviteToken);
-    await assert.rejects(persistPreviewSession(session, new URL("../.share-test", import.meta.url).pathname), /outside the repository/);
+    await assert.rejects(persistPreviewSession(session, fileURLToPath(new URL("../.share-test", import.meta.url))), /outside the repository/);
+    await assert.rejects(persistPreviewSession(session, fileURLToPath(new URL("../.share-test", import.meta.url)).normalize("NFC")), /outside the repository/);
+    await symlink(fileURLToPath(new URL("..", import.meta.url)), join(directory, "repo-alias"));
+    await assert.rejects(persistPreviewSession(session, join(directory, "repo-alias")), /outside the repository/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -212,4 +217,56 @@ test("oversize invite and image bodies are bounded before reaching upstream", as
 test("upstream redirects cannot send clients or their invite to other hosts", async (t) => {
   const f = await fixture(t, (_req, res) => { res.writeHead(302, { location: "https://evil.com/path" }); res.end(); });
   assert.equal((await call(f.port, "/notes", { headers: { cookie: f.cookie } })).status, 502);
+});
+
+const phoneEnv = { NODE_ENV: "development", SLIMBOARD_ENABLE_CODEX_SHARE: "1", SLIMBOARD_SHARE_ORIGIN: "https://slimboard-test.trycloudflare.com" };
+const phone = previewConfig(phoneEnv);
+
+test("phone sharing requires an exact HTTPS tunnel origin and explicit local development", () => {
+  assert.equal(phone.labOnly, true);
+  for (const overrides of [
+    { NODE_ENV: "production" }, { SLIMBOARD_ENABLE_CODEX_SHARE: "0" }, { VERCEL: "1" }, { CF_PAGES: "1" },
+    { SLIMBOARD_SHARE_ORIGIN: "http://slimboard-test.trycloudflare.com" },
+    { SLIMBOARD_SHARE_ORIGIN: "https://slimboard-test.trycloudflare.com.evil.com" },
+    { SLIMBOARD_SHARE_ORIGIN: "https://slimboard-test.trycloudflare.com/" },
+    { SLIMBOARD_SHARE_ORIGIN: "https://slimboard-test.trycloudflare.com:443" },
+    { SLIMBOARD_SHARE_ORIGIN: "https://evil.com" },
+  ]) assert.throws(() => previewConfig({ ...phoneEnv, ...overrides }));
+});
+
+test("phone gateway rejects all requests while the HTTPS tunnel is being prepared", async (t) => {
+  const f = await fixture(t, undefined, { origin: "", labOnly: true });
+  for (const path of ["/", "/lab/codex", "/api/lab/codex"]) {
+    assert.equal((await call(f.port, path, { headers: { cookie: f.cookie } })).status, 503);
+  }
+  assert.equal(f.seen.length, 0);
+});
+
+test("phone invitation protects the lab, rejects HTTP/foreign origins, and hides unrelated app routes", async (t) => {
+  const f = await fixture(t, undefined, phone);
+  const headers = { origin: phone.origin, cookie: f.cookie };
+  assert.equal((await call(f.port, "/api/lab/codex")).status, 401);
+  const exchange = await call(f.port, "/__invite", {
+    method: "POST", headers: { origin: phone.origin, "content-type": "application/json" },
+    body: JSON.stringify({ token: f.session.inviteToken }),
+  });
+  assert.equal(exchange.status, 204);
+  assert.match(exchange.headers["set-cookie"][0], /HttpOnly; Secure; SameSite=Strict/);
+  assert.equal((await call(f.port, "/lab/codex", { headers })).status, 200);
+  assert.equal((await call(f.port, "/api/lab/codex", { method: "POST", headers, body: "image" })).status, 200);
+  for (const origin of ["http://localhost:3001", "https://localhost:3001", "https://evil.com", "null"]) {
+    assert.equal((await call(f.port, "/api/lab/codex", { method: "POST", headers: { ...headers, origin } })).status, 403);
+  }
+  for (const path of ["/api/notes", "/notes", "/auth/callback", "/_next/static/app.js.map", "/__nextjs_original-stack-frames", "/.env.local"]) {
+    assert.equal((await call(f.port, path, { headers })).status, 404);
+  }
+  assert.equal((await call(f.port, "/", { headers })).headers.location, "/lab/codex");
+  assert.equal((await call(f.port, "/lab/codex", { headers: { ...headers, host: "evil.com" } })).status, 400);
+  assert.equal(f.seen.length, 2);
+});
+
+test("the HTTPS tunnel process never receives application credentials", () => {
+  assert.deepEqual(tunnelEnvironment({ PATH: "/bin", HOME: "/home/test", TMPDIR: "/tmp", OPENAI_API_KEY: "secret", SUPABASE_SERVICE_ROLE_KEY: "secret", NODE_OPTIONS: "--inspect", CLOUDFLARE_API_TOKEN: "secret" }), {
+    PATH: "/bin", HOME: "/home/test", TMPDIR: "/tmp",
+  });
 });

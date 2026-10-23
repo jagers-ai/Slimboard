@@ -34,7 +34,7 @@ if (command === "status") {
 }
 const env = { ...process.env, SLIMBOARD_ENABLE_CODEX_LAB: "1" };
 console.log("Slimboard: http://localhost:3000/lab/codex");
-const child = spawn(process.execPath, [join(project, "node_modules", "next", "dist", "bin", "next"), "dev", "--hostname", "127.0.0.1"], {
+const child = spawn(process.execPath, [join(project, "node_modules", "next", "dist", "bin", "next"), "dev", "--hostname", "127.0.0.1", "--port", "3000"], {
   cwd: project, env, stdio: "inherit", shell: false,
 });
 child.on("error", () => { console.error("개발 서버를 시작하지 못했습니다."); process.exitCode = 1; });

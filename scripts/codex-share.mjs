@@ -2,7 +2,7 @@
 // the Next development server itself or use this as production hosting.
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, request as httpRequest } from "node:http";
-import { chmod, mkdir, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, realpath, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,11 +19,16 @@ const safeEqual = (a, b) => timingSafeEqual(
 );
 
 export function previewConfig(env = process.env) {
+  if (env.NODE_ENV === "development" && env.SLIMBOARD_ENABLE_CODEX_SHARE === "1" &&
+      !env.VERCEL && !env.CF_PAGES && !env.CODESPACES &&
+      /^https:\/\/[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com$/.test(env.SLIMBOARD_SHARE_ORIGIN ?? "")) {
+    return { previewHost: new URL(env.SLIMBOARD_SHARE_ORIGIN).host, origin: env.SLIMBOARD_SHARE_ORIGIN, labOnly: true };
+  }
   if (env.NODE_ENV !== "development" || env.SLIMBOARD_ENABLE_CODEX_SHARE !== "1" ||
       env.CODESPACES !== "true" || env.VERCEL || env.CF_PAGES ||
       !/^[a-z0-9-]+$/.test(env.CODESPACE_NAME ?? "") ||
       env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN !== "app.github.dev") {
-    throw new Error("Temporary sharing requires an explicitly enabled personal Codespace development session.");
+    throw new Error("Temporary sharing requires explicit local development and a supported HTTPS preview origin.");
   }
   const previewHost = `${env.CODESPACE_NAME}-${SHARE_PORT}.app.github.dev`;
   return { previewHost, origin: `https://${previewHost}` };
@@ -38,14 +43,17 @@ export function newPreviewSession(now = Date.now()) {
 }
 
 export async function persistPreviewSession(session, directory = join(homedir(), ".slimboard", "codex-share")) {
-  const project = resolve(fileURLToPath(new URL("..", import.meta.url)));
+  const project = (await realpath(fileURLToPath(new URL("..", import.meta.url)))).normalize("NFC");
   const destination = resolve(directory);
-  if (destination === project || destination.startsWith(project + sep)) {
+  const insideProject = (path) => path.normalize("NFC") === project || path.normalize("NFC").startsWith(project + sep);
+  if (insideProject(destination)) {
     throw new Error("Preview credentials must be stored outside the repository.");
   }
   await mkdir(destination, { recursive: true, mode: 0o700 });
-  await chmod(destination, 0o700);
-  const path = join(destination, `${session.id}.json`);
+  const canonical = await realpath(destination);
+  if (insideProject(canonical)) throw new Error("Preview credentials must be stored outside the repository.");
+  await chmod(canonical, 0o700);
+  const path = join(canonical, `${session.id}.json`);
   await writeFile(path, JSON.stringify({
     inviteToken: session.inviteToken, key: session.key.toString("base64url"),
     id: session.id, expiresAt: session.expiresAt,
@@ -69,6 +77,7 @@ export function authenticatedPreview(cookieHeader, session, now = Date.now()) {
 
 export function sameOriginPreview(headers, config) {
   if (!validHost(headers.host) || headers["sec-fetch-site"] !== "same-origin") return false;
+  if (config.labOnly) return headers.origin === config.origin;
   const host = headers.host;
   const origin = headers.origin;
   if (origin === config.origin) return true;
@@ -78,11 +87,17 @@ export function sameOriginPreview(headers, config) {
     headers["x-forwarded-proto"] === "https";
 }
 
-export function allowedPreviewPath(rawUrl, method) {
+export function allowedPreviewPath(rawUrl, method, labOnly = false) {
   if (typeof rawUrl !== "string" || rawUrl.length > 4096 || !rawUrl.startsWith("/") || rawUrl.startsWith("//")) return false;
   const path = rawUrl.split("?")[0];
   // Reject normalization tricks before URL parsing, including encoded slashes.
   if (/[\\\u0000-\u0020\u007f]/.test(rawUrl) || /%(?:2e|2f|5c|00|25)/i.test(path) || path.split("/").includes("..")) return false;
+  if (labOnly) {
+    if (path === "/api/lab/codex") return ["GET", "POST"].includes(method);
+    return ["GET", "HEAD"].includes(method) &&
+      (["/lab/codex", "/favicon.ico"].includes(path) ||
+       (path.startsWith("/_next/static/") && !path.endsWith(".map")));
+  }
   if (path === "/api/lab/codex" || path === "/api/notes") return ["GET", "POST"].includes(method);
   if (path === "/api/recent-searches") return ["GET", "POST", "DELETE"].includes(method);
   if (/^\/api\/notes\/[A-Za-z0-9_-]{1,128}$/.test(path)) return ["GET", "PATCH", "DELETE"].includes(method);
@@ -134,6 +149,7 @@ export function createPreviewServer({ config, session, now = Date.now, upstreamP
     res.once("close", release);
     try {
       if (!validHost(req.headers.host)) return reply(res, 400, "Invalid host");
+      if (!config.origin) return reply(res, 503, "연결을 준비하고 있어요.");
       if (now() >= session.expiresAt) return reply(res, 410, "초대 링크가 만료되었어요.");
       const auth = authenticatedPreview(req.headers.cookie, session, now());
       if (req.url === "/" && req.method === "GET" && !auth) return invitePage(res);
@@ -149,7 +165,8 @@ export function createPreviewServer({ config, session, now = Date.now, upstreamP
         return reply(res, 204, "", { "Set-Cookie": previewCookie(session, now()) });
       }
       if (!auth) return reply(res, 401, "전달받은 초대 링크로 열어주세요.");
-      if (!allowedPreviewPath(req.url, req.method)) return reply(res, 404, "Not found");
+      if (req.url === "/" && req.method === "GET" && auth) return reply(res, 302, "", { Location: "/lab/codex" });
+      if (!allowedPreviewPath(req.url, req.method, config.labOnly)) return reply(res, 404, "Not found");
       const mutating = !["GET", "HEAD"].includes(req.method);
       if (mutating && !sameOriginPreview(req.headers, config)) return reply(res, 403, "Request rejected");
       let body;
@@ -181,7 +198,7 @@ export function createPreviewServer({ config, session, now = Date.now, upstreamP
         if (response.headers.location) {
           let target;
           try { target = new URL(response.headers.location, "http://127.0.0.1:3000"); } catch {}
-          if (!target || !["http://127.0.0.1:3000", "http://localhost:3000", config.origin].includes(target.origin) || !allowedPreviewPath(target.pathname + target.search, "GET")) {
+          if (!target || !["http://127.0.0.1:3000", "http://localhost:3000", config.origin].includes(target.origin) || !allowedPreviewPath(target.pathname + target.search, "GET", config.labOnly)) {
             response.resume(); release(); return reply(res, 502, "화면을 열지 못했어요.");
           }
           resultHeaders.location = target.pathname + target.search;
@@ -215,6 +232,10 @@ export function createPreviewServer({ config, session, now = Date.now, upstreamP
 
 export async function startPreview(env = process.env) {
   const config = previewConfig(env);
+  return (await startPreviewServer(config)).server;
+}
+
+export async function startPreviewServer(config, { announce = true } = {}) {
   const session = newPreviewSession();
   const file = await persistPreviewSession(session);
   const server = createPreviewServer({ config, session });
@@ -226,9 +247,11 @@ export async function startPreview(env = process.env) {
   server.once("close", () => { clearTimeout(expiry); unlink(file).catch(() => {}); process.off("SIGINT", stop); process.off("SIGTERM", stop); });
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
-  console.log("Temporary internal preview: expires in 4 hours, maximum 10 analyses. Keep port 3000 private.");
-  console.log(`${config.origin}/#invite=${session.inviteToken}`);
-  return server;
+  if (announce) {
+    console.log("Temporary internal preview: expires in 4 hours, maximum 10 analyses. Keep port 3000 private.");
+    console.log(`${config.origin}/#invite=${session.inviteToken}`);
+  }
+  return { server, session };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
