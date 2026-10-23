@@ -1,3 +1,9 @@
+# Archived experiment
+
+The app now uses the OpenAI API. See [current setup](openai-api.md). The following
+documents the previous OAuth experiment; its login/start instructions are no
+longer the default app workflow.
+
 # ChatGPT 구독으로 실행하는 로컬 OCR 실험
 
 개인 PC에서 Codex CLI의 **ChatGPT 로그인**으로 화이트보드 사진 한 장을 분석하는 개발용 실험입니다. 기존 Gemini 업로드 흐름과 별도로 `/lab/codex`에서 제목·원문·요약·검색어를 확인합니다. 이미지는 분석을 위해 OpenAI로 전송됩니다. 결과를 Supabase에 저장하지 않습니다.

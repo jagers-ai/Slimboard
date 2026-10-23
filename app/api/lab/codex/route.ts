@@ -1,18 +1,11 @@
 import { isCodexLabEnabled, isSameOriginLabRequest } from "@/lib/codex-lab";
+import { analyzeWithOpenAI, OpenAIOcrError } from "@/lib/openai-ocr";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 let analyzing = false;
-
-async function codexHelper() {
-  // Keep the local CLI and filesystem helper out of production bundles entirely.
-  if (process.env.NODE_ENV === "development") {
-    return import("@/scripts/codex-ocr.mjs");
-  }
-  throw new Error("The local Codex experiment is disabled.");
-}
 
 function json(body: unknown, status = 200) {
   return Response.json(body, {
@@ -25,8 +18,7 @@ export async function GET(request: Request) {
   if (!isCodexLabEnabled(request.headers.get("host"))) {
     return json({ error: "Not found" }, 404);
   }
-  const { checkCodexAuth } = await codexHelper();
-  return json(await checkCodexAuth());
+  return json({ ready: Boolean(process.env.OPENAI_API_KEY?.trim()) });
 }
 
 export async function POST(request: Request) {
@@ -81,14 +73,13 @@ export async function POST(request: Request) {
       return json({ error: "JPG, PNG, WebP 사진을 선택해주세요." }, 400);
     }
 
-    const { checkCodexAuth, analyzeWithCodex } = await codexHelper();
-    const auth = await checkCodexAuth();
-    if (!auth.authenticated || auth.mode !== "chatgpt") {
-      return json({ error: "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요." }, 401);
-    }
-    const result = await analyzeWithCodex(Buffer.from(await image.arrayBuffer()), image.type);
+    const result = await analyzeWithOpenAI(Buffer.from(await image.arrayBuffer()), image.type);
     return json(result);
-  } catch {
+  } catch (error) {
+    if (error instanceof OpenAIOcrError) {
+      const status = error.code === "INVALID_IMAGE" ? 400 : error.code === "TIMEOUT" ? 504 : 502;
+      return json({ error: error.message }, status);
+    }
     return json({ error: "사진을 정리하지 못했어요. 다시 시도해주세요." }, 502);
   } finally {
     analyzing = false;

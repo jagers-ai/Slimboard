@@ -41,7 +41,7 @@ export type NotePreview = Pick<
   image_url: string | null;
 };
 
-export type GeminiAnalysis = {
+export type WhiteboardAnalysis = {
   title: string;
   rawText: string;
   summary: string;

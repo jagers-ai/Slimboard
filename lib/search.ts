@@ -1,4 +1,4 @@
-import type { GeminiAnalysis } from "@/lib/types";
+import type { WhiteboardAnalysis } from "@/lib/types";
 
 export function buildSearchText(input: {
   title?: string | null;
@@ -17,7 +17,7 @@ export function buildSearchText(input: {
     .trim();
 }
 
-export function normalizeAnalysis(analysis: Partial<GeminiAnalysis>): GeminiAnalysis {
+export function normalizeAnalysis(analysis: Partial<WhiteboardAnalysis>): WhiteboardAnalysis {
   return {
     title: cleanText(analysis.title) || "Untitled whiteboard",
     rawText: cleanText(analysis.rawText),

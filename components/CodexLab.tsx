@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BookOpen, Camera, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 
-type AuthStatus = { available: boolean; authenticated: boolean; mode: string | null; message: string };
+type AuthStatus = { ready: boolean };
 type AnalysisResult = {
   analysis: { title: string; rawText: string; summary: string; keywords: string[] };
   model: string;
@@ -97,7 +97,7 @@ export function CodexLab() {
     }
   }
 
-  const ready = auth?.authenticated && auth.mode === "chatgpt";
+  const ready = auth?.ready;
   const pending = busy || preparing;
   return (
     <main className="app-shell">

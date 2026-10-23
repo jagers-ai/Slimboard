@@ -7,14 +7,12 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "lab:login": "node scripts/codex-lab.mjs login",
-    "lab:status": "node scripts/codex-lab.mjs status",
-    "lab:start": "node scripts/codex-lab.mjs start",
+    "lab:status": "node scripts/openai-lab.mjs status",
+    "lab:start": "node scripts/openai-lab.mjs start",
     "lab:share": "node scripts/codex-share.mjs",
-    "lab:test": "node --test scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs"
+    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs"
   },
   "dependencies": {
-    "@google/genai": "^1.52.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.3",
     "lucide-react": "^1.14.0",

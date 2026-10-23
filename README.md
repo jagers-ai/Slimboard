@@ -1,7 +1,7 @@
 # Slimboard
 
 Slimboard is a mobile-first whiteboard memory app. Users sign in with Google,
-capture or upload a whiteboard photo, and Gemini turns it into a searchable note
+capture or upload a whiteboard photo, and the OpenAI API turns it into a searchable note
 with the original image, raw transcription, Korean summary, keywords, and visual
 context.
 
@@ -9,7 +9,7 @@ context.
 
 - Next.js App Router + TypeScript
 - Supabase Auth, Postgres, and private Storage
-- Gemini API through `@google/genai`
+- OpenAI Responses API (GPT-6 Astra / Light)
 - Sharp for server-side analysis image generation
 
 ## Setup
@@ -27,14 +27,14 @@ npm run dev
 
 ## Environment
 
-`GEMINI_MODEL` defaults to `gemini-3-flash-preview`. Keep it configurable because
-the Gemini 3 Flash model may move from preview to stable naming later.
+The server uses `OPENAI_API_KEY`. `SLIMBOARD_OPENAI_MODEL` defaults to
+`gpt-6-astra`, and `SLIMBOARD_OPENAI_REASONING_EFFORT` defaults to `low`.
 
 The app stores original and analysis images in the private `whiteboard-images`
 bucket. Browsers only keep temporary previews during capture/upload.
 
-## Local ChatGPT plan experiment
+## Local camera experiment
 
-See [the local Codex OCR experiment](docs/chatgpt-plan-experiment.md) to test
-whiteboard transcription and summaries with a personal Codex ChatGPT login.
-This development-only lab does not replace Gemini or run in hosted deployments.
+See [OpenAI API setup and phone testing](docs/openai-api.md). `npm run lab:start`
+runs the camera screen at `/lab/codex` with an existing API key. The normal app
+uses the same API analysis. The old Codex OAuth experiment is archived.

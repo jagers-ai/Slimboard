@@ -2,7 +2,7 @@ import {
   ANALYSIS_VERSION,
   PROMPT_VERSION,
   analyzeWhiteboardImage,
-} from "@/lib/gemini";
+} from "@/lib/openai";
 import type { AppUser } from "@/lib/auth";
 import { buildSearchText } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -12,7 +12,7 @@ import {
   downloadImageObject,
   removeImageObjects,
 } from "@/lib/storage";
-import type { GeminiAnalysis, NotePreview, NoteWithImageUrl, WhiteboardNote } from "@/lib/types";
+import type { WhiteboardAnalysis, NotePreview, NoteWithImageUrl, WhiteboardNote } from "@/lib/types";
 
 const NOTE_PREVIEW_SELECT =
   "id,title,raw_text,summary,analysis_image_path,status,created_at";
@@ -232,7 +232,7 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser) {
 }
 
 function mapAnalysisToUpdate(
-  analysis: GeminiAnalysis,
+  analysis: WhiteboardAnalysis,
   meta: { model: string },
 ) {
   const searchText = buildSearchText({

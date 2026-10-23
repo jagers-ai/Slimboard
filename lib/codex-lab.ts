@@ -1,5 +1,5 @@
 // This experiment is only available in an explicitly enabled local dev server.
-// It must not become a hosted inference endpoint using a personal Codex login.
+// The lab bypasses normal app sign-in, so it remains local development only.
 export function isCodexLabEnabled(host: string | null) {
   if (
     process.env.NODE_ENV !== "development" ||
