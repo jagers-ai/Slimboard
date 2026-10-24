@@ -60,7 +60,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   return NextResponse.json({ note });
-  } catch { return NextResponse.json({ error: "저장하지 못했어요. 분석 중인지 확인하고 다시 시도해주세요." }, { status: 409 }); }
+  } catch { return NextResponse.json({ error: "지금은 저장할 수 없어요. 사진 변환이 끝난 뒤 다시 시도해 주세요." }, { status: 409 }); }
 }
 
 export async function DELETE(request: Request, { params }: Params) {

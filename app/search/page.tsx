@@ -20,8 +20,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       <AppFrame active="search" className="search-shell">
         <SearchForm />
         <div className="search-empty">
-          <strong>앱 설정이 필요합니다.</strong>
-          <p>현재 Slimboard를 사용할 수 없습니다. 관리자에게 문의해주세요.</p>
+          <strong>잠시 이용할 수 없어요.</strong>
+          <p>잠시 후 다시 시도해 주세요.</p>
         </div>
       </AppFrame>
     );

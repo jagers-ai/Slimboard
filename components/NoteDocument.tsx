@@ -34,7 +34,7 @@ export function NoteDocument({ analysis, createdAt, photoUrl, includeTime, headi
           </summary>
           <PhotoZoom className="note-photo-zoom" src={photoUrl} alt="노트에 저장된 사진" downloadUrl={downloadUrl} />
           <p className="photo-zoom-hint">사진을 누르면 크게 볼 수 있어요.</p>
-          {downloadUrl ? <div className="photo-download-row"><span>분석용 이미지</span><a className="text-button" href={downloadUrl} download><Download size={18} />사진 다운로드</a></div> : null}
+          {downloadUrl ? <div className="photo-download-row"><a className="text-button" href={downloadUrl} download><Download size={18} />사진 다운로드</a></div> : null}
         </details>
       ) : null}
       <details className="document-disclosure" open>

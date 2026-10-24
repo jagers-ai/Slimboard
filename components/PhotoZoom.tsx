@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { Download, Expand, Maximize, Minus, Plus, X } from "lucide-react";
+import { visibleViewportBounds } from "@/lib/visible-viewport";
 import { photoView } from "@/lib/photo-view";
 
 export function PhotoZoom({ src, alt, className = "", downloadUrl }: {
@@ -27,12 +28,15 @@ export function PhotoZoom({ src, alt, className = "", downloadUrl }: {
     const modal = dialog.current!;
     modal.showModal();
     closeButton.current?.focus({ preventScroll: true });
+    modal.style.setProperty("--navigation-min-bottom", /Android/i.test(navigator.userAgent) ? "48px" : "0px");
     const viewport = window.visualViewport;
     const resizeViewport = () => {
-      if (!viewport || Math.abs(viewport.scale - 1) > .01) return;
-      modal.style.setProperty('--photo-viewport-height', `${viewport.height}px`);
-      modal.style.setProperty('--photo-viewport-top', `${viewport.offsetTop}px`);
+      if (viewport && Math.abs(viewport.scale - 1) > .01) return;
+      const bounds = visibleViewportBounds(window.innerHeight, document.documentElement.clientHeight, viewport?.height ?? window.innerHeight, viewport?.offsetTop ?? 0);
+      modal.style.setProperty('--photo-viewport-height', `${bounds.height}px`);
+      modal.style.setProperty('--photo-viewport-top', `${bounds.top}px`);
     };
+    window.addEventListener("resize", resizeViewport);
     resizeViewport();
     viewport?.addEventListener('resize', resizeViewport);
     viewport?.addEventListener('scroll', resizeViewport);
@@ -43,6 +47,7 @@ export function PhotoZoom({ src, alt, className = "", downloadUrl }: {
     observer.observe(stage.current!);
     return () => {
       observer.disconnect();
+      window.removeEventListener("resize", resizeViewport);
       viewport?.removeEventListener('resize', resizeViewport);
       viewport?.removeEventListener('scroll', resizeViewport);
       modal.close();

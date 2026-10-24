@@ -102,10 +102,9 @@ function SetupScreen() {
   return (
     <AppFrame active="home">
       <section className="setup-panel">
-        <span className="eyebrow">설정 필요</span>
-        <h1>앱 설정이 필요합니다</h1>
+        <h1>잠시 이용할 수 없어요</h1>
         <p className="page-subtitle">
-          현재 Slimboard를 사용할 수 없습니다. 관리자에게 문의해주세요.
+          잠시 후 다시 시도해 주세요.
         </p>
       </section>
 

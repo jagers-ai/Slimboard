@@ -42,7 +42,7 @@ export function KakaoBrowserGate({ children }: { children: ReactNode }) {
       <section className="external-browser-content" aria-labelledby="external-browser-heading">
         <span className="eyebrow">카카오톡에서 접속했어요</span>
         <h1 id="external-browser-heading" className="page-title" tabIndex={-1}>외부 브라우저에서<br />열어주세요</h1>
-        <p className="page-subtitle">카카오톡에서는 Google 로그인이 제한될 수 있어요. {browser}에서 로그인하고 촬영·분석·저장을 이어가세요.</p>
+        <p className="page-subtitle">로그인하려면 {browser}에서 열어 주세요.</p>
         <div className="external-browser-actions">
           <a className="button primary" href={context.links.primary} onClick={() => setHelp(true)}><ExternalLink size={18} aria-hidden="true" />{browser}{context.device === "ios" ? "로" : "으로"} 열기</a>
           <button type="button" className="button" onClick={() => void copyLink()}><Copy size={18} aria-hidden="true" />링크 복사</button>

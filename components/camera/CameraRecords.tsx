@@ -27,7 +27,7 @@ export function CameraRecords({ query, onQueryChange, notes, hasDraft, disabled,
         <input ref={searchRef} type="search" value={query} onChange={(event) => onQueryChange(event.target.value)}
           placeholder="기록 검색" aria-label="기록 검색어" />
       </label>
-      <p className="session-caption">이 탭에서 만든 기록이에요. 새로고침하면 사라집니다.</p>
+      <p className="session-caption">새로고침하거나 화면을 닫으면 기록이 사라져요.</p>
       {filtered.length ? (
         <div className="notes-list">
           {filtered.map((note) => (

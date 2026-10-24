@@ -22,7 +22,7 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
   return (
     <section className="search-results">
       <h2>
-        <span>전체</span> 검색 결과
+        검색 결과
       </h2>
       <div className="search-result-list">
         {notes.map((note) => (
@@ -34,7 +34,7 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
               <strong>{highlightText(note.title, query)}</strong>
             </div>
             <p>{highlightText(getResultSnippet(note), query)}</p>
-            <div className="search-result-meta">{formatDate(note.created_at)} · 전체 노트</div>
+            <div className="search-result-meta">{formatDate(note.created_at)}</div>
           </Link>
         ))}
       </div>
@@ -43,7 +43,7 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
 }
 
 function getResultSnippet(note: NotePreview) {
-  return note.summary || note.raw_text || "분석이 진행 중입니다.";
+  return note.summary || note.raw_text || (note.status === "processing" ? "내용을 정리하고 있어요." : note.status === "failed" ? "사진을 다시 변환해 주세요." : "내용이 없는 노트예요.");
 }
 
 function highlightText(text: string, query: string) {

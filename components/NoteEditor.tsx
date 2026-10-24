@@ -58,7 +58,7 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
       setDraft({ ...savedNote, recovery: null });
       clearDraft();
       setSaved(savedNote);
-      setMessage("클라우드에 저장됐어요.");
+      setMessage("저장했어요.");
       if (mounted.current) router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 중 문제가 생겼어요.");
@@ -70,10 +70,10 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
 
   async function analyze() {
     if (pending.current) return;
-    if (!recovery && !window.confirm("사진을 다시 분석할까요? 현재 수정 내용이 새 분석 결과로 바뀝니다.")) return;
+    if (!recovery && !window.confirm("사진을 다시 변환할까요? 지금까지 수정한 내용이 새 내용으로 바뀝니다.")) return;
     pending.current = true;
     setIsAnalyzing(true);
-    setMessage(recovery ? "정리된 노트를 저장하고 있어요." : "다시 분석하고 있어요.");
+    setMessage(recovery ? "정리된 노트를 저장하고 있어요." : "사진을 다시 변환하고 있어요.");
 
     try {
       const response = await fetch(`/api/notes/${note.id}/analyze`, {
@@ -85,17 +85,17 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
 
       if (payload.recovery) { const recovery = payload.recovery; setDraft(current => ({ ...current, recovery })); }
       if (!response.ok) {
-        throw new Error(payload.error ?? "분석에 실패했어요.");
+        throw new Error(payload.error ?? "사진을 변환하지 못했어요.");
       }
 
       if (!payload.note) throw new Error("저장된 노트를 확인하지 못했어요.");
       setDraft({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary, recovery: null });
       clearDraft();
       setSaved({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary });
-      setMessage("노트가 클라우드에 저장됐어요.");
+      setMessage("노트를 저장했어요.");
       if (mounted.current) router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "분석 중 문제가 생겼어요.");
+      setMessage(error instanceof Error ? error.message : "사진을 변환하지 못했어요.");
     } finally {
       pending.current = false;
       setIsAnalyzing(false);
@@ -150,7 +150,7 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
       <div className="document-tools">
         <button className="text-button" type="button" onClick={analyze} disabled={busy}>
           {isAnalyzing ? <LoaderCircle size={18} className="spinner" /> : <RefreshCw size={18} />}
-          {recovery ? "노트 저장 다시 시도" : isAnalyzing ? "변환 중" : "재분석"}
+          {recovery ? "노트 저장 다시 시도" : isAnalyzing ? "변환 중" : "다시 변환"}
         </button>
         <button className="text-button" type="button" onClick={remove} disabled={busy}><Trash2 size={18} />{isDeleting ? "삭제 중" : "삭제"}</button>
       </div>

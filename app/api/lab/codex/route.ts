@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     return json({ error: "화면을 새로고침한 뒤 다시 시도해주세요." }, 403);
   }
   if (analyzing) {
-    return json({ error: "앞선 사진을 분석 중이에요. 완료 후 다시 시도해주세요." }, 409);
+    return json({ error: "앞선 사진을 정리하고 있어요. 완료 후 다시 시도해 주세요." }, 409);
   }
 
   const contentLength = Number(request.headers.get("content-length"));
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     try {
       form = await boundedRequest.formData();
     } catch {
-      return json({ error: "사진 업로드 형식을 확인해주세요." }, 400);
+      return json({ error: "사진을 다시 선택해 주세요." }, 400);
     }
     const image = form.get("image");
     if (!(image instanceof File) || !image.size || image.size > MAX_IMAGE_BYTES) {

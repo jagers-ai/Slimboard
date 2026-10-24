@@ -29,7 +29,7 @@ export async function prepareCameraPhoto(selected: File): Promise<File> {
       if (!blob) break;
       if (blob.size <= 10 * 1024 * 1024) return new File([blob], "whiteboard.jpg", { type: "image/jpeg" });
     }
-    throw new Error("사진 용량을 줄이지 못했어요. 다른 사진을 선택해주세요.");
+    throw new Error("사진을 열지 못했어요. 다른 사진을 선택해 주세요.");
   } finally {
     // Release the large canvas backing store promptly on mobile Safari.
     canvas.width = canvas.height = 1;

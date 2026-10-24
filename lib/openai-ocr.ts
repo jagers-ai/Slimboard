@@ -91,7 +91,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
   const model = options.model ?? process.env.SLIMBOARD_OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
   const reasoningEffort = options.reasoningEffort ?? process.env.SLIMBOARD_OPENAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT;
   if (!["low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) {
-    throw new OpenAIOcrError("INVALID_CONFIG", "분석 설정을 확인해주세요.");
+    throw new OpenAIOcrError("INVALID_CONFIG", "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요.");
   }
   const started = performance.now();
   const safeModel = (value: unknown) => typeof value === "string" && /^gpt-[a-z0-9][a-z0-9.-]{0,95}$/.test(value) ? value : null;
@@ -135,7 +135,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
     }
     let payload: unknown;
     try { payload = await response.json(); } catch {
-      if (controller.signal.aborted) throw new OpenAIOcrError("TIMEOUT", "분석 시간이 길어지고 있어요. 다시 시도해주세요.");
+      if (controller.signal.aborted) throw new OpenAIOcrError("TIMEOUT", "사진을 정리하는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 확인해 주세요.");
       throw new OpenAIOcrError("INVALID_RESPONSE", "사진을 정리하지 못했어요. 다시 시도해주세요.");
     }
     if (object(payload)) {
@@ -152,7 +152,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
     return result;
   } catch (error) {
     const failure = error instanceof OpenAIOcrError ? error : new OpenAIOcrError(controller.signal.aborted ? "TIMEOUT" : "REQUEST_FAILED", controller.signal.aborted
-      ? "분석 시간이 길어지고 있어요. 다시 시도해주세요."
+      ? "사진을 정리하는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 확인해 주세요."
       : "사진을 정리하지 못했어요. 다시 시도해주세요.");
     record.errorCode = failure.code;
     throw failure;

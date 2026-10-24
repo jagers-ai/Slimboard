@@ -99,3 +99,23 @@ and return keyboard focus to the invoking photo on close. Download uses only
 the existing authorized image endpoint or the selected local analysis image.
 The modal must support Escape, focus containment, safe areas, enlarged text,
 loading/error/retry states and at least 48px controls.
+
+## 사용자에게 보이는 문구
+
+- 화면에는 사용자의 행동·진행 상태·결과·복구에 필요한 문구만 쓴다.
+- 저장 위치, 이미지 처리 크기, 원본 보관 방식, 모델/API/토큰, 서버 응답,
+  내부 설정과 중복 요청 방지 같은 구현 설명을 상시 안내로 노출하지 않는다.
+- 내부 원인을 설명하기보다 무엇이 안 됐는지와 다음 행동을 쉽게 안내한다.
+- 동작 이름은 화면의 버튼과 맞춘다. 사진 정리는 ‘변환’, 반복 실행은 ‘다시 변환’.
+- 삭제·덮어쓰기 확인, 미저장 내용, 일시 보관 기록의 소멸, 오류/재시도 안내,
+  접근성 레이블처럼 사용자의 판단과 데이터 보존에 필요한 문구는 유지한다.
+- 사용자가 작성한 제목/본문 및 저장된 기록은 문구 정리 대상으로 일괄 수정하지 않는다.
+
+## Android 하단 시스템 영역
+
+하단 메뉴와 사진 확대 조작은 시스템 버튼 영역 위에 둔다. 브라우저가 전달한
+안전 여백과 Android의 보수적 최소 여백 48 CSS px 중 큰 값을 사용하고 기본
+간격 8px을 더한다. 웹에서 3버튼/제스처 모드를 확실히 구분할 수 없으므로
+제스처 환경에도 이 최소 여백이 적용될 수 있다. 고정 영역 높이는 실제 표시
+높이와 레이아웃 높이 중 작은 값에 맞추고 키보드 종료 뒤 남은 위치 값을
+범위 안으로 제한한다. CSS 100dvh 상한도 유지하며 핀치 확대는 방해하지 않는다.

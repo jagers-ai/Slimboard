@@ -23,7 +23,7 @@ export async function analyzeCameraPhoto(photo: File, signal: AbortSignal, reque
   if (response.status === 401 || response.status === 410) {
     throw new Error("초대 링크가 만료되었어요. 새 초대 링크로 다시 열어주세요.");
   }
-  if (response.status === 429) throw new Error("이번 초대의 분석 횟수를 모두 사용했어요.");
+  if (response.status === 429) throw new Error("이번 초대의 이용 횟수를 모두 사용했어요.");
   let payload: unknown;
   try { payload = await response.json(); } catch { throw new Error(INVALID_RESPONSE); }
   if (!response.ok) {

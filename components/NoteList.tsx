@@ -24,7 +24,7 @@ export function NoteList({ emptyText, notes }: NoteListProps) {
           </div>
           <div className="note-body">
             <h3>{note.title}</h3>
-            <p>{note.summary || note.raw_text || "분석이 진행 중입니다."}</p>
+            <p>{note.summary || note.raw_text || (note.status === "processing" ? "내용을 정리하고 있어요." : note.status === "failed" ? "사진을 다시 변환해 주세요." : "내용이 없는 노트예요.")}</p>
             <time dateTime={note.created_at}>{formatNoteDate(note.created_at)}</time>
             {note.status !== "completed" ? <StatusBadge status={note.status} /> : null}
           </div>

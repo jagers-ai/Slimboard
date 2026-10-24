@@ -136,7 +136,7 @@ h1:focus, h2:focus { outline: none; }
 }
 .capture-placeholder p { margin: 0; line-height: 1.6; }
 .capture-home .upload-preview {
-  aspect-ratio: auto; height: clamp(140px, calc(var(--app-viewport-height, 100dvh) - 470px), 420px);
+  aspect-ratio: auto; height: clamp(140px, calc(var(--app-viewport-height, 100dvh) - 470px - max(var(--navigation-min-bottom, 0px), var(--safe-bottom))), 420px);
 }
 .capture-home .upload-preview img { object-fit: contain; }
 .capture-home .capture-actions { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px; }
@@ -179,3 +179,11 @@ h1:focus, h2:focus { outline: none; }
 .photo-viewer-footer p, .notebook-document .photo-viewer-footer p { color: #c4c8c6; font-size: .8125rem; line-height: 1.4; text-align: center; margin: 8px 0 0; }
 .photo-viewer-message { display: grid; place-content: center; gap: 16px; min-height: 100%; padding: 24px; text-align: center; }
 .photo-viewer-loading { position: absolute; padding: 24px; color: #c4c8c6; }
+
+.photo-download-row { justify-content: flex-end; }
+
+/* Keep controls above Android system buttons even when the browser reports 0. */
+.app-shell.docked-shell { max-height: calc(100dvh - var(--app-viewport-top, 0px)); }
+.app-shell.docked-shell > .bottom-dock { padding-bottom: calc(8px + max(var(--safe-bottom), var(--navigation-min-bottom, 0px))); }
+.photo-viewer { max-height: calc(100dvh - var(--photo-viewport-top, 0px)); }
+.photo-viewer-footer { padding-bottom: calc(8px + max(var(--safe-bottom), var(--navigation-min-bottom, 0px))); }

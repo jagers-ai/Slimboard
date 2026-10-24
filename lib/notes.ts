@@ -190,26 +190,26 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser, options:
   if (options.recovery) {
     let receipt: Recovery;
     try { receipt = openRecovery<Recovery>(options.recovery, secret); }
-    catch { throw new NoteOperationError("저장 정보를 확인하지 못했어요.", 400); }
+    catch { throw new NoteOperationError("노트를 저장하지 못했어요. 노트의 저장 상태를 확인해 주세요.", 400); }
     if (receipt.owner !== user.id || receipt.note !== noteId || receipt.expires < Date.now() || receipt.attempt !== note.analysis_attempt) {
-      throw new NoteOperationError("이 기록의 저장 정보가 만료되었거나 변경됐어요.", 409);
+      throw new NoteOperationError("노트를 저장하지 못했어요. 노트의 저장 상태를 확인해 주세요.", 409);
     }
     if (note.status === "completed") return { note };
-    if (note.status !== "processing") throw new NoteOperationError("기록 상태가 변경됐어요.", 409);
+    if (note.status !== "processing") throw new NoteOperationError("노트가 변경되었어요. 다시 열어 확인해 주세요.", 409);
     return saveAnalysisResult(() => persist(receipt.attempt, receipt.update), options.recovery);
   }
   const attempt = randomUUID();
   const { data: claim, error: claimError } = await supabase.rpc("claim_note_analysis", {
     p_note: noteId, p_owner: user.id, p_attempt: attempt, p_force: options.force === true,
   });
-  if (claimError) throw new NoteOperationError("분석을 준비하지 못했어요. 잠시 뒤 다시 시도해주세요.", 503);
+  if (claimError) throw new NoteOperationError("사진을 변환하지 못했어요. 잠시 후 다시 시도해 주세요.", 503);
   if (claim === "completed") return { note: await getNoteForUser(noteId, user.id) };
   if (claim !== "claimed") {
     const messages: Record<string, string> = {
-      busy: "이미 분석 중이거나 이전 요청의 결과를 확인 중이에요. 중복 분석은 시작하지 않았어요.",
+      busy: "사진을 정리하고 있어요. 잠시 후 노트를 확인해 주세요.",
       image_pending: "사진 저장을 먼저 완료해주세요.",
-      retry_required: "이전 분석이 실패했어요. 기록 화면에서 재분석을 선택해주세요.",
-      rate_limited: "분석 요청이 많아요. 잠시 뒤 다시 시도해주세요.",
+      retry_required: "사진을 변환하지 못했어요. 노트에서 ‘다시 변환’을 눌러 주세요.",
+      rate_limited: "지금은 이용이 많아요. 잠시 후 다시 시도해 주세요.",
     };
     throw new NoteOperationError(messages[String(claim)] ?? "기록을 찾을 수 없어요.", claim === "rate_limited" ? 429 : 409);
   }
@@ -218,9 +218,9 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser, options:
     const image = await downloadImageObject(note.analysis_image_path);
     result = await analyzeWhiteboardImage({ buffer: image, mimeType: "image/jpeg" });
   } catch {
-    await supabase.from("whiteboard_notes").update({ status: "failed", error_message: "분석에 실패했어요. 사진은 저장되어 있어요.", updated_at: new Date().toISOString() })
+    await supabase.from("whiteboard_notes").update({ status: "failed", error_message: "사진을 변환하지 못했어요. 사진은 저장되어 있어요.", updated_at: new Date().toISOString() })
       .eq("id", noteId).eq("owner_user_id", user.id).eq("analysis_attempt", attempt);
-    throw new NoteOperationError("분석에 실패했어요. 사진은 저장되어 있어요. 재분석은 별도 요청으로 진행됩니다.", 502);
+    throw new NoteOperationError("사진을 변환하지 못했어요. 사진은 저장되어 있으니 노트에서 다시 시도해 주세요.", 502);
   }
   const update = mapAnalysisToUpdate(result.analysis, { model: result.model });
   const recovery = sealRecovery({ owner: user.id, note: noteId, attempt, expires: Date.now() + 7 * 86400_000, update } satisfies Recovery, secret);

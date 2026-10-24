@@ -53,7 +53,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
       });
       const payload = await readNoteResponse(response);
       if (payload.recovery) { const recovery = payload.recovery; setDraft(current => ({ ...current, recovery })); }
-      if (!response.ok) throw new Error(payload.error ?? "처리하지 못했어요.");
+      if (!response.ok) throw new Error(payload.error ?? "노트를 만들지 못했어요.");
       clearDraft();
       if (mounted.current) router.push(`/notes/${draft.noteId}`);
     } catch (error) {
@@ -66,7 +66,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
 
   async function handleFile(nextFile: File | undefined) {
     if (!nextFile || submitting.current) return;
-    if (draft.recovery && !window.confirm("아직 저장되지 않은 분석 결과가 있어요. 새 사진을 선택할까요?")) return;
+    if (draft.recovery && !window.confirm("아직 저장하지 못한 노트가 있어요. 새 사진을 선택할까요?")) return;
     submitting.current = true;
     setStage("preparing");
     setMessage(null);
@@ -79,7 +79,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
   }
 
   function clearFile() {
-    if (draft.recovery && !window.confirm("저장하지 못한 분석 결과가 사라져요. 선택을 지울까요?")) return;
+    if (draft.recovery && !window.confirm("아직 저장하지 못한 노트가 사라져요. 사진 선택을 취소할까요?")) return;
     setDraft({ file: null, noteId: null, uploaded: false, recovery: null });
     clearDraft();
     setMessage(null);
@@ -168,8 +168,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
         {stage === "preparing" ? "사진 준비 중" : stage === "uploading" ? "사진 저장 중" : stage === "analyzing" ? "변환 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "변환"}
       </button> : null}
 
-      {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 클라우드에 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}
-      {file ? <p className="session-caption">사진은 분석에 필요한 크기로 저장됩니다. 원본 파일은 별도로 보관하지 않아요.</p> : null}
+      {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}
       {draft.uploaded && draft.noteId ? <a className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</a> : null}
       {message ? <p className="inline-message" role="status">{message}</p> : null}
     </section>
