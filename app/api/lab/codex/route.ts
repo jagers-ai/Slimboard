@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       return json({ error: "JPG, PNG, WebP 사진을 선택해주세요." }, 400);
     }
 
-    const result = await analyzeWithOpenAI(Buffer.from(await image.arrayBuffer()), image.type);
+    const result = await analyzeWithOpenAI(Buffer.from(await image.arrayBuffer()), image.type, { source: "camera-lab" });
     return json(result);
   } catch (error) {
     if (error instanceof OpenAIOcrError) {

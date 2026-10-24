@@ -1,6 +1,9 @@
 import type { WhiteboardAnalysis } from "./types";
+import { randomUUID } from "node:crypto";
+import { appendUsageRecord, estimateUsageCost, readTokenUsage, type UsageRecord } from "./openai-usage.ts";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-6-astra";
+export const DEFAULT_OPENAI_MODEL = "gpt-6.1-sol";
+export const DEFAULT_REASONING_EFFORT = "medium";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -79,16 +82,25 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
   reasoningEffort?: ReasoningEffort;
   timeoutMs?: number;
   fetch?: typeof fetch;
+  source?: UsageRecord["source"];
+  recordUsage?: (record: UsageRecord) => Promise<void>;
 } = {}) {
   validateImage(buffer, mimeType);
   const apiKey = (options.apiKey ?? process.env.OPENAI_API_KEY)?.trim();
   if (!apiKey) throw new OpenAIOcrError("NOT_CONFIGURED", "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요.");
   const model = options.model ?? process.env.SLIMBOARD_OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
-  const reasoningEffort = options.reasoningEffort ?? process.env.SLIMBOARD_OPENAI_REASONING_EFFORT ?? "low";
+  const reasoningEffort = options.reasoningEffort ?? process.env.SLIMBOARD_OPENAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT;
   if (!["low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) {
     throw new OpenAIOcrError("INVALID_CONFIG", "분석 설정을 확인해주세요.");
   }
   const started = performance.now();
+  const safeModel = (value: unknown) => typeof value === "string" && /^gpt-[a-z0-9][a-z0-9.-]{0,95}$/.test(value) ? value : null;
+  const record: UsageRecord = {
+    version: 1, id: randomUUID(), timestamp: new Date().toISOString(), requestedModel: safeModel(model),
+    responseModel: null, reasoningEffort, serviceTier: null, responseId: null, requestId: null,
+    source: options.source ?? "direct", status: "failed", errorCode: null, elapsedMs: 0, usage: null, cost: null,
+  };
+  let result: { analysis: WhiteboardAnalysis; model: string; reasoningEffort: string; elapsedMs: number; accounting: { id: string; usage: UsageRecord["usage"]; cost: UsageRecord["cost"]; recorded: boolean } } | undefined;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.min(Math.max(options.timeoutMs ?? 120_000, 1), 180_000));
   try {
@@ -99,6 +111,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
       signal: controller.signal,
       body: JSON.stringify({
         model,
+        service_tier: "default",
         reasoning: { effort: reasoningEffort },
         instructions: prompt,
         input: [{ role: "user", content: [
@@ -110,6 +123,8 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
         max_output_tokens: 8192,
       }),
     });
+    const requestId = response.headers.get("x-request-id");
+    record.requestId = requestId && /^req_[a-zA-Z0-9_-]{1,180}$/.test(requestId) ? requestId : null;
     if (!response.ok) {
       // Provider error bodies can contain sensitive details; never expose them.
       await response.body?.cancel();
@@ -117,14 +132,39 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
         ? "지금은 요청을 처리할 수 없어요. 잠시 후 다시 시도해주세요."
         : "사진을 정리하지 못했어요. 다시 시도해주세요.");
     }
-    const analysis = parseAnalysis(await response.json());
-    return { analysis, model, reasoningEffort, elapsedMs: Math.round(performance.now() - started) };
+    let payload: unknown;
+    try { payload = await response.json(); } catch {
+      if (controller.signal.aborted) throw new OpenAIOcrError("TIMEOUT", "분석 시간이 길어지고 있어요. 다시 시도해주세요.");
+      throw new OpenAIOcrError("INVALID_RESPONSE", "사진을 정리하지 못했어요. 다시 시도해주세요.");
+    }
+    if (object(payload)) {
+      record.usage = readTokenUsage(payload.usage);
+      record.responseModel = safeModel(payload.model);
+      record.serviceTier = typeof payload.service_tier === "string" && ["default", "flex", "priority", "fast", "ultrafast"].includes(payload.service_tier) ? payload.service_tier : null;
+      record.responseId = typeof payload.id === "string" && /^resp_[a-zA-Z0-9_-]{1,180}$/.test(payload.id) ? payload.id : null;
+      record.cost = estimateUsageCost(record.usage, record.responseModel, record.serviceTier);
+    }
+    const analysis = parseAnalysis(payload);
+    record.status = "completed";
+    result = { analysis, model, reasoningEffort, elapsedMs: Math.round(performance.now() - started),
+      accounting: { id: record.id, usage: record.usage, cost: record.cost, recorded: false } };
+    return result;
   } catch (error) {
-    if (error instanceof OpenAIOcrError) throw error;
-    throw new OpenAIOcrError(controller.signal.aborted ? "TIMEOUT" : "REQUEST_FAILED", controller.signal.aborted
+    const failure = error instanceof OpenAIOcrError ? error : new OpenAIOcrError(controller.signal.aborted ? "TIMEOUT" : "REQUEST_FAILED", controller.signal.aborted
       ? "분석 시간이 길어지고 있어요. 다시 시도해주세요."
       : "사진을 정리하지 못했어요. 다시 시도해주세요.");
+    record.errorCode = failure.code;
+    throw failure;
   } finally {
     clearTimeout(timer);
+    record.elapsedMs = Math.round(performance.now() - started);
+    try {
+      await (options.recordUsage ?? appendUsageRecord)(record);
+      if (result) result.accounting.recorded = true;
+    } catch {
+      // Never replace a successful paid result with an error that invites a
+      // duplicate charge; report accounting failure without sensitive details.
+      console.error("Slimboard: API usage record could not be saved.");
+    }
   }
 }

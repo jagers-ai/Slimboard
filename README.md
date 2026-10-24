@@ -9,7 +9,7 @@ context.
 
 - Next.js App Router + TypeScript
 - Supabase Auth, Postgres, and private Storage
-- OpenAI Responses API (GPT-6 Astra / Light)
+- OpenAI Responses API (GPT-6.1 Sol / Medium)
 - Sharp for server-side analysis image generation
 
 ## Setup
@@ -28,7 +28,9 @@ npm run dev
 ## Environment
 
 The server uses `OPENAI_API_KEY`. `SLIMBOARD_OPENAI_MODEL` defaults to
-`gpt-6-astra`, and `SLIMBOARD_OPENAI_REASONING_EFFORT` defaults to `low`.
+`gpt-6.1-sol`, and `SLIMBOARD_OPENAI_REASONING_EFFORT` defaults to `medium`.
+Each dispatched analysis records actual token usage and a usage-based cost
+estimate privately on the server. Run `npm run lab:usage` to view the totals.
 
 The app stores original and analysis images in the private `whiteboard-images`
 bucket. Browsers only keep temporary previews during capture/upload.

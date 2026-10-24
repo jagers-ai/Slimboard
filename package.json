@@ -8,11 +8,12 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lab:status": "node scripts/openai-lab.mjs status",
+    "lab:usage": "node scripts/openai-usage-report.mjs",
     "lab:start": "node scripts/openai-lab.mjs start",
     "lab:share": "node scripts/codex-share.mjs",
     "lab:phone": "node scripts/phone-preview.mjs",
     "lab:smoke": "node scripts/lab-smoke.mjs",
-    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs"
+    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs"
   },
   "engines": {
     "node": ">=24 <25"

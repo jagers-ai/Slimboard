@@ -1,7 +1,7 @@
 # OpenAI API photo analysis
 
 Both saved notes and the camera lab use the OpenAI Responses API. The default is
-`gpt-6-astra` with `low` reasoning (Astra Light). There is no OAuth or Codex CLI
+`gpt-6.1-sol` with `medium` reasoning. There is no OAuth or Codex CLI
 login in the app's analysis path.
 
 The server reads the existing `OPENAI_API_KEY`. Configure it through the secure
@@ -100,6 +100,52 @@ rejection. It sends no valid image and does not call the OpenAI API.
 
 The files `scripts/codex-ocr*` and `scripts/codex-lab.mjs` retain the previous
 OAuth experiment for historical comparison. They are not imported by the app.
+
+## Usage and cost records
+
+Every dispatched API analysis from the lab or saved notes app appends a JSONL
+record under `~/.slimboard/usage/openai-YYYY-MM.jsonl` (UTC month). Directory
+permissions are 0700; files are 0600. Photo bytes, filenames, transcription,
+summaries, prompts, user identifiers, and API keys are never included.
+
+Records contain a local accounting ID, timestamp, requested and returned model,
+reasoning effort, actual response service tier, API response/request IDs,
+source, completion/error code, elapsed time, and the API's actual usage counts:
+input, cache read, cache write by lifetime, output, reasoning, and total tokens.
+Reasoning tokens are a subset of output and are never charged twice. Invalid
+model output can still be billed and is recorded with its reported usage.
+Network errors and HTTP errors with no usage are recorded with null usage/cost,
+not zero. Validation rejected before dispatch does not create a usage record.
+
+```bash
+npm run lab:usage
+npm run lab:usage -- --json
+```
+
+The request explicitly selects Standard (`service_tier: default`). Cost uses the
+response model and tier with the official rate card verified on 2026-10-24:
+Sol 6.1 Standard input $2, cached input $0.10, 30m cache write $2.50, 12h cache
+write $5, output $10 per million tokens. The prior Astra model is also recognized.
+Rate snapshots, long-context thresholds and service-tier multipliers are stored
+with each estimate. If a nonzero cache-write total lacks a lifetime breakdown,
+the recorder uses this request's unchanged API default TTL of 30m and labels
+that fallback. Unknown models/tiers or malformed usage leave cost null.
+
+USD cost is calculated from actual tokens, not an invoice amount. KRW is a
+reference conversion at 1,400 KRW/USD, not live exchange or the card settlement
+rate; taxes and account-specific discounts are excluded. Pricing changes require
+updating the rate card; existing records keep their original price snapshot.
+If a file write fails, the server emits a sanitized warning and a successful
+analysis reports `accounting.recorded: false` instead of discarding the result
+or repeating a paid request. The camera UI remains focused on the note.
+
+This is a durable local-Mac log. A future hosted/serverless deployment requires
+persistent private storage for the same records. Past calls cannot be backfilled
+from the old app because it did not retain usage.
+
+References: [pricing](https://developers.openai.com/api/docs/pricing),
+[cache-write accounting](https://developers.openai.com/api/docs/guides/prompt-caching),
+[reasoning usage](https://developers.openai.com/api/docs/guides/reasoning).
 
 References: [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create),
 [vision input](https://developers.openai.com/api/docs/guides/images-vision),
