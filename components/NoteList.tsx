@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/AppLink";
 import { BookOpen } from "lucide-react";
 
 import { formatNoteDate } from "@/lib/note-date";

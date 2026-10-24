@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/AppLink";
 import { Mic } from "lucide-react";
 import type { ReactNode } from "react";
 

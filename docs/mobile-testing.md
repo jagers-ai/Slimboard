@@ -110,3 +110,39 @@ Actual Supabase verification is described in cloud-storage.md. Google OAuth
 completion, phone camera/HEIC behavior, real soft keyboards/address bars,
 VoiceOver/TalkBack and device font/display settings remain unverified. No physical
 Galaxy S25+ or iPhone 18 Pro was connected to this Mac for this change.
+
+## ChatGPT Sites public deployment — 2026-10-24
+
+Deployment URL: https://slimboard-jagers.beliandeve.chatgpt.site
+Source starts at original repository commit 8fdf321; Sites uses a separate checkout.
+
+- Unauthenticated HTTP without ChatGPT cookies: landing 200; personal notes API
+  401; disabled lab page/API 404. No ChatGPT login required.
+- Chrome 156/macOS: real Google account selection, consent, PKCE callback and
+  return to the signed-in records page succeeded.
+- One synthetic, non-personal JPEG was placed into the album input with the
+  supported developer testing interface. The extension's OS file-chooser upload
+  was unavailable, so this does not establish OS file-picker or phone-camera behavior.
+- Browser preparation -> photo review -> upload -> real OpenAI analysis ->
+  completed Supabase note -> reload persisted title/summary all succeeded.
+- Final successful analysis: gpt-6.1-sol/medium, 5.824 seconds, 1,990 actual
+  tokens. Private D1 accounting confirmed. Original is null, exactly one
+  analysis.jpg object; temporary synthetic note/image cleaned afterwards.
+- One earlier call was rejected before dispatch due to an unsupported Worker
+  redirect option. Another analysis completed but receipt encryption failed;
+  the synthetic fixture was explicitly unlocked after diagnosis. Both runtime
+  incompatibilities are fixed and reproduced in the actual workerd test.
+- Deployed note view: 320x740, 402x874, 412x915 and 874x402, no horizontal overflow.
+  Temporary viewport override reset after verification.
+- 83 automated tests, one actual workerd integration, type checking, production
+  build and 17 live deployed-site Supabase HTTP checks passed. Test accounts and
+  HTTP fixtures cleaned. No private keys in tracked source or deployment archive.
+- Physical iPhone/Galaxy capture, HEIC selection and handwriting legibility remain
+  device acceptance tests. Browser emulation is not represented as phone testing.
+
+Final navigation check: a production next/link lazy-import failure was reproduced
+and replaced by the shared AppLink using the router hook directly. On the live
+site, home -> search -> home navigation succeeded and the selected synthetic
+photo remained present, with no additional AI request. The draft was cleared and
+sign-out was checked after testing. This is soft navigation, not a persistence
+change; photos remain memory-only until the user submits analysis.

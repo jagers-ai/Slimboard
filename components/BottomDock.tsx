@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/AppLink";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, HomeIcon, Search } from "lucide-react";

@@ -47,3 +47,15 @@ The recovery cipher accepts explicit UTF-8 bytes for Worker/Node compatibility.
 `npm run test:sites-runtime` exercises actual workerd request construction,
 structured analysis parsing, D1 accounting and receipt encryption/decryption
 with a fake provider response (no paid API call).
+
+## Public verification completed
+
+The public Google OAuth round trip and real analysis/save/reload were verified
+on 2026-10-24. Anonymous access requires no ChatGPT login. See mobile-testing.md
+for exact tests and remaining physical-device checks. Final test counts are
+83 automated checks plus one actual workerd integration. A successful deployed
+analysis and durable private cost log were confirmed; test-only data was removed.
+
+The shared AppLink calls the supported router hook directly, avoiding a Vinext
+beta production dynamic-import issue in next/link. Navigation stays within the
+current document so in-memory photo/editor drafts are retained.

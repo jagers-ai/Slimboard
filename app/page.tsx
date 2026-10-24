@@ -1,5 +1,5 @@
 import { AccountBoundary } from "@/components/AccountBoundary";
-import Link from "next/link";
+import Link from "@/components/AppLink";
 import { BookOpen, Search, Sparkles } from "lucide-react";
 
 import { BottomDock } from "@/components/BottomDock";
