@@ -1,78 +1,36 @@
----
-name: Slimboard
-version: 0.1.0
-status: alpha
-platform: mobile-web
-tokens:
-  color:
-    background: "#f4f6f8"
-    surface: "#ffffff"
-    surfaceSubtle: "#f8fafc"
-    text: "#1f2933"
-    textStrong: "#111827"
-    muted: "#667384"
-    mutedSoft: "#b8c0c9"
-    line: "#edf0f3"
-    blue: "#3182f6"
-    blueSoft: "#e8f2ff"
-    red: "#ef4452"
-    amber: "#f59f00"
-    green: "#20b486"
-  typography:
-    family: "S-Core Dream, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    title: "34px/1.16 800"
-    section: "24px/1.25 800"
-    body: "17px/1.55 500"
-    caption: "14px/1.4 700"
-  radius:
-    card: 28px
-    button: 18px
-    control: 18px
-    chip: 999px
-  spacing:
-    pageX: 20px
-    pageY: 18px
-    card: 24px
-    gap: 16px
-    dockBottom: 20px
-components:
-  button:
-    primary: "blue fill, white text, 56px minimum height"
-    secondary: "soft gray fill, dark text, no border"
-  card:
-    style: "white surface, 28px radius, minimal shadow, no visible heavy border"
-  list:
-    style: "large icon on left, title and muted metadata, optional right action"
-  bottomDock:
-    style: "floating rounded white dock, 5 or fewer items, active item dark"
----
-
 # Slimboard Mobile Design
 
-Slimboard is a mobile-first web app for saving whiteboard photos as searchable notes. The UI should feel like a clean Korean mobile finance app: calm, fast, readable, and touch-first.
+Direction: a clear working notebook. Photographs and readable records carry the identity.
+The approved October 24, 2026 concept uses three stages: records, photo review, and a readable note.
 
-## Direction
+## Visual system
 
-- Use a white and light-gray canvas with blue as the only strong action color.
-- Favor large rounded cards, clear section titles, and short Korean labels.
-- Build screens as vertical mobile flows, not desktop grids.
-- Keep actions thumb-friendly with at least 48px touch targets.
-- Respect all four safe-area insets on iOS and Android. Keep zoom enabled and let long button labels wrap.
-- Keep the camera lab as one scrollable column, with separate camera and album controls and no fixed action bar.
-- Use list rows for saved notes and information sections.
+- White canvas, near-black text (`#18221d`), muted secondary text (`#68716c`), thin dividers (`#e4e8e5`).
+- Deep green (`#205943`) is reserved for primary actions and focus indicators.
+- Use the platform system sans-serif; no external font dependency. Body 16px with generous line height, headings 28–30px and weight 600.
+- Small 4–6px corners, no card shadows, decorative gradients, sparkle icons, or colorful keyword pills.
+- One mobile column, 480px maximum normally, 24px side gutters (16px on small screens).
+- Lists use photographic thumbnails and fine row dividers. Results read like a document, not a form.
 
-## Do
+## Flow and controls
 
-- Put the primary task near the top of the screen.
-- Use strong hierarchy: title, supporting text, then action.
-- Use muted text for metadata and descriptions.
-- Keep card spacing generous so each section breathes.
-- Reuse the same button, chip, input, card, and bottom dock rhythm across all screens.
+- Records: search, actual records, primary photo capture, secondary album selection. Never seed fake records.
+- Review: large uncropped photo, clear reselect/back controls, one primary `내용 정리` action.
+- Result: title and summary first; original image, full transcription, and keywords are disclosures.
+- Saved notes expose editing through `노트 수정`; existing save, reanalysis, and deletion behavior remains available.
+- The standalone lab keeps records only in React memory for the current tab. State this plainly. Do not imply permanent storage or add sensitive photos to browser storage.
+- Keep selected photos on failure or when returning to the list. Warn about accidental page unload when there is session content.
 
-## Do Not
+## Mobile and accessibility
 
-- Do not copy Toss brand names, logos, characters, or financial product language.
-- Do not add fake OS status bars.
-- Do not design wide desktop layouts.
-- Do not use decorative hero stock photos, heavy borders, nested cards, or colorful gradients as decoration.
-- Do not introduce new packages for visual polish.
+- Support Safari/iOS and Chrome/Android through responsive layout, not device detection.
+- Keep camera capture and album inputs separate. Preserve client image preparation and orientation handling in the lab.
+- Honor all four safe-area insets, allow zoom, use at least 48px touch targets and 16px form fields.
+- Keep actions in normal document flow with a flex spacer: no overlay hiding content when the keyboard opens or text grows.
+- Allow 200% text and long content to wrap; landscape remains scrollable.
+- Use visible keyboard focus, real labels, live status, disabled actions during work, and focus the heading on stage changes.
+- Respect reduced motion. Do not add fake OS chrome or model/authentication explanations to the product screen.
+
+## Verification boundary
+
+Responsive browser checks do not establish physical phone behavior. Record the exact browser, viewport sizes, and tested flow in `docs/mobile-testing.md`. Report device capture separately.

@@ -61,3 +61,22 @@ versions, include a HEIC photo; on Android, include the camera's normal format.
 References: [WebKit safe-area guidance](https://webkit.org/blog/7929/designing-websites-for-iphone-x/),
 [mobile viewport units](https://web.dev/blog/viewport-units),
 [Safari 17 image formats](https://webkit.org/blog/14445/webkit-features-in-safari-17-0/).
+
+## 2026-10-24 — notebook redesign
+
+Implemented the approved white-canvas, forest-green, restrained notebook direction in the shared design system. The lab now has separate records, photo review, and note-reading stages. Its records/search are tab-memory only, with explicit refresh-loss copy and an unload warning. Saved-note routes use the same row layout and reading-first detail screen; editing remains available in a disclosure.
+
+Verified on the Mac:
+
+- Chromium/IAB: actual synthetic photo selection → review → OpenAI analysis → readable note → records → text search → reopen, without another analysis call. The single API request completed in 5,091 ms using gpt-6.1-sol / medium; the existing usage ledger recorded the request.
+- Selected photo survives returning to records and resuming. Invalid replacement image shows a readable error while retaining the previous photo.
+- Original photograph and full transcription disclosures work. Heading focus moves after stage changes; controls disable during analysis.
+- Result layout at 320×568, 360×740, 402×874, 412×915, 440×956, and landscape 874×402: document width equals its scroll width. Visible buttons and disclosures have at least 48px height.
+- At 320px, 200% root text plus simulated 59px top / 34px bottom safe areas: no horizontal overflow; content remains scrollable. Temporary overrides restored.
+- macOS Safari: records screen, native album picker, prepared-photo preview, and enabled analysis button. Closing the test tab produced the expected unload warning. No additional paid analysis was run in Safari.
+- Active protected HTTPS tunnel: new UI loaded; album upload and invalid-image recovery passed. The old tests-announces URL is obsolete. Tunnel URLs remain temporary, not deployment endpoints.
+- 59 automated tests, typecheck, production build, and all 8 lab HTTP checks passed, including external Host rejection and cross-origin rejection.
+
+Limitations: physical iPhone/Android capture was not repeated after this redesign. macOS Safari is not a physical iOS device. The saved-note Supabase screens were type/build checked, but their authenticated storage flow cannot be end-to-end tested without the separate Supabase configuration.
+
+Local evidence (ignored by Git): `.local-checks/redesign-list.jpg`, `redesign-photo.jpg`, `redesign-note.jpg`, `redesign-tests.log`, `redesign-build.log`.

@@ -24,7 +24,8 @@ export function NoteList({ emptyText, notes }: NoteListProps) {
           <div className="note-body">
             <h3>{note.title}</h3>
             <p>{note.summary || note.raw_text || "분석이 진행 중입니다."}</p>
-            <StatusBadge status={note.status} />
+            <time dateTime={note.created_at}>{new Date(note.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" })}</time>
+            {note.status !== "completed" ? <StatusBadge status={note.status} /> : null}
           </div>
         </Link>
       ))}

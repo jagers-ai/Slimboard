@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
-  BookOpen,
+  ChevronDown,
 } from "lucide-react";
 
 import { BottomDock } from "@/components/BottomDock";
@@ -42,35 +42,25 @@ export default async function NotePage({ params }: NotePageProps) {
 
   return (
     <main className="app-shell">
-      <header className="topbar detail-topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">
-            <BookOpen size={19} />
-          </span>
-          Slimboard
-        </Link>
-        <Link className="button" href="/">
-          <ArrowLeft size={18} />
-          목록
-        </Link>
+      <header className="notebook-topbar">
+        <Link className="text-button icon-button" href="/notes" aria-label="기록 목록으로"><ArrowLeft size={22} /></Link>
+        <span>노트</span><span />
       </header>
-
-      <section className="detail-layout">
-        <div className="detail-panel">
-          <div className="status-row">
-            <div>
-              <span className="eyebrow">원본 이미지</span>
-              <h1 className="page-title note-title">{note.title}</h1>
-            </div>
-            <StatusBadge status={note.status} />
-          </div>
-          <div className="detail-image">
-            {note.image_url ? <img alt={note.title} src={note.image_url} /> : null}
-          </div>
-        </div>
-
-        <NoteEditor note={editorNote} />
-      </section>
+      <article className="notebook-document">
+        <time className="session-caption" dateTime={note.created_at}>{new Date(note.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" })}</time>
+        <h1>{note.title}</h1>
+        {note.status !== "completed" ? <StatusBadge status={note.status} /> : null}
+        {note.image_url ? <details className="original-photo">
+          <summary><img src={note.image_url} alt="" /><span>원본 사진 보기</span><ChevronDown size={20} /></summary>
+          <img className="expanded-photo" alt={note.title} src={note.image_url} />
+        </details> : null}
+        <section className="document-section"><h2>요약</h2><p>{note.summary || "아직 정리된 내용이 없어요."}</p></section>
+        <details className="document-disclosure"><summary>전체 원문<ChevronDown size={20} /></summary><p>{note.raw_text || "아직 읽은 내용이 없어요."}</p></details>
+        {note.keywords.length ? <details className="document-disclosure"><summary>키워드<ChevronDown size={20} /></summary><p>{note.keywords.join(" · ")}</p></details> : null}
+        <details className="document-disclosure" open={note.status === "failed" ? true : undefined}>
+          <summary>노트 수정<ChevronDown size={20} /></summary><NoteEditor note={editorNote} />
+        </details>
+      </article>
 
       <BottomDock active="notes" />
     </main>

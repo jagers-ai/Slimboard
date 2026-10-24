@@ -2,6 +2,8 @@ import Link from "next/link";
 import { BookOpen, Search, Sparkles } from "lucide-react";
 
 import { BottomDock } from "@/components/BottomDock";
+import { NoteList } from "@/components/NoteList";
+import { listNotesForUser } from "@/lib/notes";
 import { CaptureUploader } from "@/components/CaptureUploader";
 import { SignInButton } from "@/components/SignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
@@ -23,20 +25,21 @@ export default async function Home() {
   }
 
   await ensurePersonalWorkspace(user);
+  const notes = await listNotesForUser({ userId: user.id });
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <Link className="brand" href="/">
-          <span className="brand-mark">
-            <BookOpen size={19} />
-          </span>
-          Slimboard
+          슬림보드
         </Link>
         <SignOutButton email={user.email ?? ""} />
       </header>
 
       <section className="dashboard">
+        <div className="section-heading"><h1 className="page-title">기록</h1></div>
+        <Link className="notebook-search" href="/search"><Search size={20} />기록 검색</Link>
+        <NoteList notes={notes} emptyText="첫 사진을 노트로 남겨보세요." />
         <CaptureUploader />
       </section>
 
@@ -50,10 +53,7 @@ function Landing() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">
-            <BookOpen size={19} />
-          </span>
-          Slimboard
+          슬림보드
         </div>
       </header>
 

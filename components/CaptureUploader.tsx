@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, ImageUp, LoaderCircle, Sparkles, X } from "lucide-react";
+import { Camera, ImageUp, LoaderCircle, X } from "lucide-react";
 
 export function CaptureUploader() {
   const router = useRouter();
@@ -85,11 +85,7 @@ export function CaptureUploader() {
 
   return (
     <section className="panel capture-panel" id="capture">
-      <div className="section-heading compact">
-        <span className="eyebrow">저장</span>
-        <h2>화이트보드 저장</h2>
-        <p className="muted">사진을 선택하면 노트로 정리해드립니다.</p>
-      </div>
+      {file ? <div className="section-heading compact"><h2>사진 확인</h2><p className="muted">글씨가 잘 보이는지 확인해 주세요.</p></div> : null}
 
       <input
         ref={cameraInputRef}
@@ -111,7 +107,7 @@ export function CaptureUploader() {
         onChange={(event) => handleFile(event.target.files?.[0])}
       />
 
-      <div className="upload-preview">
+      {file ? <div className="upload-preview">
         {previewUrl ? (
           <img alt="선택한 화이트보드" src={previewUrl} />
         ) : (
@@ -121,11 +117,11 @@ export function CaptureUploader() {
             <span>화이트보드가 선명하게 보이는 사진이 좋아요.</span>
           </div>
         )}
-      </div>
+      </div> : null}
 
       <div className="split-actions">
         <button
-          className="button"
+          className={file ? "button" : "button primary"}
           type="button"
           onClick={() => {
             if (!cameraInputRef.current) return;
@@ -135,7 +131,7 @@ export function CaptureUploader() {
           disabled={busy}
         >
           <Camera size={18} />
-          촬영
+          {file ? "다시 촬영" : "사진 촬영"}
         </button>
         <button
           className="button"
@@ -148,7 +144,7 @@ export function CaptureUploader() {
           disabled={busy}
         >
           <ImageUp size={18} />
-          업로드
+          앨범에서 선택
         </button>
         {file ? (
           <button className="button icon-only" type="button" aria-label="선택한 사진 지우기" onClick={clearFile} disabled={busy}>
@@ -157,10 +153,10 @@ export function CaptureUploader() {
         ) : null}
       </div>
 
-      <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
-        {busy ? <LoaderCircle size={18} /> : <Sparkles size={18} />}
-        {stage === "uploading" ? "저장 중" : stage === "analyzing" ? "분석 중" : "노트 만들기"}
-      </button>
+      {file ? <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
+        {busy ? <LoaderCircle size={18} className="spinner" /> : null}
+        {stage === "uploading" ? "저장 중" : stage === "analyzing" ? "분석 중" : "내용 정리"}
+      </button> : null}
 
       {message ? <p className="inline-message">{message}</p> : null}
     </section>

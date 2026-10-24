@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { BottomDock } from "@/components/BottomDock";
 import { NoteList } from "@/components/NoteList";
@@ -34,19 +34,13 @@ export default async function NotesPage() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <Link className="brand" href="/">
-          <span className="brand-mark">
-            <BookOpen size={19} />
-          </span>
-          Slimboard
-        </Link>
+        <Link className="brand" href="/">슬림보드</Link>
+        <Link className="text-button icon-button" href="/search" aria-label="기록 검색"><Search size={22} /></Link>
       </header>
 
       <section className="section-stack">
         <div className="section-heading">
-          <span className="eyebrow">노트</span>
-          <h1 className="page-title">저장한 화이트보드</h1>
-          <p className="page-subtitle">촬영한 화이트보드를 다시 확인해보세요.</p>
+          <h1 className="page-title">기록</h1>
         </div>
 
         <NoteList emptyText="첫 화이트보드를 저장해보세요." notes={notes} />
