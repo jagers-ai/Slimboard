@@ -1,3 +1,4 @@
+import { deleteOwnedNote, getOwnedNote } from "@/lib/note-mutations";
 import {
   ANALYSIS_VERSION,
   PROMPT_VERSION,
@@ -115,7 +116,7 @@ export async function updateNoteForUser(input: {
   summary: string;
 }) {
   const supabase = createAdminClient();
-  const note = await getNoteForUser(input.noteId, input.userId);
+  const note = await getOwnedNote(input.noteId, input.userId, getNoteForUser);
 
   if (!note) {
     return null;
@@ -151,37 +152,33 @@ export async function updateNoteForUser(input: {
 }
 
 export async function deleteNoteForUser(noteId: string, userId: string) {
-  const supabase = createAdminClient();
-  const note = await getNoteForUser(noteId, userId);
-
-  if (!note) {
-    return false;
-  }
-
-  await removeImageObjects([note.original_image_path, note.analysis_image_path]);
-
-  const { error } = await supabase
-    .from("whiteboard_notes")
-    .delete()
-    .eq("id", noteId)
-    .eq("owner_user_id", userId);
-
-  if (error) {
-    throw error;
-  }
-
-  return true;
+  return deleteOwnedNote(noteId, userId, {
+    load: getNoteForUser,
+    deleteRow: async (id, ownerId) => {
+      const { data, error } = await createAdminClient()
+        .from("whiteboard_notes")
+        .delete()
+        .eq("id", id)
+        .eq("owner_user_id", ownerId)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      return Boolean(data);
+    },
+    removeImages: removeImageObjects,
+    onCleanupFailure: () => console.warn("Deleted note image cleanup failed; storage cleanup required."),
+  });
 }
 
 export async function analyzeNoteForUser(noteId: string, user: AppUser) {
   const supabase = createAdminClient();
-  const note = await getNoteForUser(noteId, user.id);
+  const note = await getOwnedNote(noteId, user.id, getNoteForUser);
 
   if (!note) {
     throw new Error("Note not found.");
   }
 
-  await supabase
+  const { data: started, error: startError } = await supabase
     .from("whiteboard_notes")
     .update({
       status: "processing",
@@ -189,7 +186,11 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", noteId)
-    .eq("owner_user_id", user.id);
+    .eq("owner_user_id", user.id)
+    .select("id")
+    .maybeSingle();
+  if (startError) throw startError;
+  if (!started) throw new Error("Note not found.");
 
   try {
     const analysisImage = await downloadImageObject(note.analysis_image_path);

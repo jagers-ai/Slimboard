@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
 
+import { formatNoteDate } from "@/lib/note-date";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { NotePreview } from "@/lib/types";
 
@@ -19,12 +20,12 @@ export function NoteList({ emptyText, notes }: NoteListProps) {
       {notes.map((note) => (
         <Link className="note-card" href={`/notes/${note.id}`} key={note.id}>
           <div className="note-thumb">
-            {note.image_url ? <img alt="" src={note.image_url} /> : <BookOpen size={24} />}
+            {note.image_url ? <img alt="" src={note.image_url} loading="lazy" /> : <BookOpen size={24} />}
           </div>
           <div className="note-body">
             <h3>{note.title}</h3>
             <p>{note.summary || note.raw_text || "분석이 진행 중입니다."}</p>
-            <time dateTime={note.created_at}>{new Date(note.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" })}</time>
+            <time dateTime={note.created_at}>{formatNoteDate(note.created_at)}</time>
             {note.status !== "completed" ? <StatusBadge status={note.status} /> : null}
           </div>
         </Link>

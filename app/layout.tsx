@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
+import "./notebook.css";
 
 export const metadata: Metadata = {
   title: "Slimboard",

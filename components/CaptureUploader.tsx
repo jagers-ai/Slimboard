@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { useRouter } from "next/navigation";
 import { Camera, ImageUp, LoaderCircle, X } from "lucide-react";
 
@@ -9,27 +10,17 @@ export function CaptureUploader() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewUrl = useObjectUrl(file);
+  const submitting = useRef(false);
   const [stage, setStage] = useState<"idle" | "uploading" | "analyzing">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
   async function submit() {
-    if (!file || stage !== "idle") {
+    if (!file || submitting.current) {
       return;
     }
 
+    submitting.current = true;
     setMessage(null);
     setStage("uploading");
 
@@ -61,6 +52,7 @@ export function CaptureUploader() {
       router.push(`/notes/${noteId}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "처리 중 문제가 생겼어요.");
+      submitting.current = false;
       setStage("idle");
     }
   }
