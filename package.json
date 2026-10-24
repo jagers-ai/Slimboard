@@ -13,7 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
-    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs scripts/camera-session.test.mjs scripts/note-mutations.test.mjs scripts/cloud-storage.test.mjs",
+    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs scripts/camera-session.test.mjs scripts/note-mutations.test.mjs scripts/cloud-storage.test.mjs scripts/external-browser.test.mjs",
     "test:sites-runtime": "node --test scripts/sites-runtime.test.mjs"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { KakaoBrowserGate } from "@/components/KakaoBrowserGate";
 
 import "./globals.css";
 import "./notebook.css";
@@ -24,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body><KakaoBrowserGate>{children}</KakaoBrowserGate></body>
     </html>
   );
 }

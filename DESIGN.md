@@ -68,3 +68,13 @@ Keep the brand and introduction top-aligned with a shared left gutter. Use a
 28px header-to-introduction gap and content-sized hero; no fixed-height hero
 or bottom alignment inside it. Leave flexible space below the feature list
 and above the bottom navigation, which remains in normal document flow.
+
+## KakaoTalk entry
+
+On mobile KakaoTalk entry, show a compact external-browser guidance screen
+before the normal app UI: Safari on iOS, Chrome on Android. Detection is only
+a UI hint, never an authentication or authorization check. Browser switching
+requires a tap; do not auto-redirect or transfer login codes/session tokens.
+Offer default-browser handoff, link copying and selectable-address recovery.
+Regular browsers keep the existing flow. Physical-device app switching remains
+a separate acceptance check from browser emulation.

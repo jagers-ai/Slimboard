@@ -181,3 +181,28 @@ Chrome local preview: 320x740, 402x874, 412x915 and 874x402 at 16px and 32px
 root text (8 combinations). All have matching left alignment, a 28px header gap,
 no horizontal overflow, >=48px controls, and navigation below the feature list.
 No authentication, API, saved-note or signed-in records behavior changed.
+
+## 카카오톡 외부 브라우저 안내 — 2026-10-25
+
+- 모바일 User-Agent의 KAKAOTALK 표식과 OS를 확인해 안내 화면을 표시한다.
+  일반 Safari·Chrome·삼성 인터넷과 데스크톱에서는 기존 화면을 유지한다.
+- iOS HTTPS: 사용자 클릭으로 `x-safari-https:` Safari 실행을 시도한다.
+  이 주소 방식은 모든 iOS/카카오톡 버전에서 보장되는 공개 표준이 아니므로
+  카카오톡 기본 브라우저 열기와 링크 복사·수동 주소 선택을 함께 제공한다.
+- Android: `intent:`에서 Chrome 패키지를 지정한다. 실행되지 않으면 동일
+  사이트의 도움말 화면으로 돌아오는 fallback을 제공한다. 기본 브라우저
+  열기는 삼성 인터넷을 포함한 사용자의 설정을 따를 수 있다.
+- 페이지 진입만으로 앱을 실행하지 않는다. 외부 브라우저에서는 홈페이지부터
+  로그인을 다시 시작하며 인증 코드·토큰·원래 쿼리·개별 노트 주소를 전달하지 않는다.
+- 검증: 관련 단위 검사 7개 포함 자동 검사 총 90개, 타입 검사 통과.
+  Chrome에서 iOS/Android 카카오톡 User-Agent를 모사하여 안내 분기 확인.
+  320x740, 402x874, 412x915, 874x402 × 글자 16/32px × OS 2종의 16개 조합에서
+  가로 넘침 없음, 표시되는 조작 요소 높이 48px 이상. 도움말 펼침도 포함한다.
+- 링크 복사 성공, 클립보드 실패를 모사했을 때 수동 복사 입력란 표시,
+  `externalBrowser=help`로 돌아왔을 때 도움말 자동 펼침을 확인했다.
+- 미검증: 실제 아이폰/갤럭시 카카오톡에서 Safari/Chrome 앱으로 전환,
+  Chrome 미설치 상태의 실제 fallback, 외부 브라우저 로그인·촬영·분석·저장.
+  브라우저 식별 정보 모사는 해당 실기기 검증을 대체하지 않는다.
+- 참고: https://developer.chrome.com/docs/android/intents
+  https://devtalk.kakao.com/t/ios-url-scheme/140411
+  https://bugzilla.mozilla.org/show_bug.cgi?id=1986355

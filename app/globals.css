@@ -996,3 +996,18 @@ a:focus-visible {
 .landing-shell .feature-list { gap: 24px; }
 .landing-shell .feature-row { padding: 0; align-items: flex-start; }
 .landing-shell > .bottom-dock { margin-top: auto; }
+
+.external-browser-shell > .topbar { margin-bottom: 28px; }
+.external-browser-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.external-browser-content .page-title { line-height: 1.3; }
+.external-browser-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.external-browser-actions .button { flex: 1 1 145px; white-space: normal; }
+.external-browser-status { margin: 0; color: var(--muted); font-size: 1rem; overflow-wrap: anywhere; }
+.external-browser-status:empty { display: none; }
+.external-browser-copy { display: grid; gap: 8px; }
+.external-browser-copy .input { width: 100%; min-width: 0; }
+.external-browser-help { color: var(--muted); font-size: 1rem; line-height: 1.6; }
+.external-browser-help summary { cursor: pointer; min-height: 48px; padding-block: 12px; }
+.external-browser-help p { margin: 12px 0; }
+.external-browser-help .button { white-space: normal; }
+.external-browser-help summary:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
