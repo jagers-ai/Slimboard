@@ -36,9 +36,9 @@ including the camera lab and the signed-in application. Read it before UI work;
 ## Flow and controls
 
 - Records: search, actual records, primary photo capture, secondary album selection. Never seed fake records.
-- Review: large uncropped photo, clear reselect/back controls, one primary `내용 정리` action.
-- Result: title and summary first; saved analysis image, full transcription, and keywords are disclosures.
-- Saved notes expose editing through `노트 수정`; existing save, reanalysis, and deletion behavior remains available.
+- Review: large uncropped photo, clear reselect/back controls, one primary `변환` action, with `사진 첨부` for album/file selection.
+- Result: editable title, analysis photo with download, then an initially open editable full transcription. Summary comes below as a collapsed disclosure. Keywords remain stored and searchable but are not rendered.
+- Saved notes are a continuous editable document, not a separate `노트 수정` form. Use borderless auto-growing fields, a top-right `저장` action, and quiet reanalysis/deletion actions. Keep explicit labels, visible focus and pending/error/draft behavior.
 - The standalone lab keeps records only in React memory for the current tab. State this plainly. Do not imply permanent storage or add sensitive photos to browser storage.
 - Keep selected photos on failure or when returning to the list. Warn about accidental page unload when there is session content.
 

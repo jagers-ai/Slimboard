@@ -103,7 +103,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
         hidden
         type="file"
         accept="image/*"
-        aria-label="앨범에서 사진 선택"
+        aria-label="사진 첨부"
         disabled={busy}
         onChange={(event) => handleFile(event.target.files?.[0])}
       />
@@ -145,7 +145,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
           disabled={busy}
         >
           <ImageUp size={18} />
-          앨범에서 선택
+          사진 첨부
         </button>
         {file ? (
           <button className="button icon-only" type="button" aria-label="선택한 사진 지우기" onClick={clearFile} disabled={busy}>
@@ -156,7 +156,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
 
       {file ? <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
         {busy ? <LoaderCircle size={18} className="spinner" /> : null}
-        {stage === "preparing" ? "사진 준비 중" : stage === "uploading" ? "사진 저장 중" : stage === "analyzing" ? "내용 정리 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "내용 정리"}
+        {stage === "preparing" ? "사진 준비 중" : stage === "uploading" ? "사진 저장 중" : stage === "analyzing" ? "변환 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "변환"}
       </button> : null}
 
       {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 클라우드에 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}

@@ -82,3 +82,22 @@ h1:focus, h2:focus { outline: none; }
   .review-image { height: 65svh; min-height: 180px; }
   .notebook-empty { padding: 24px 0; }
 }
+
+/* Editable document: fields merge into the page, with a visible focus cue. */
+.document-editor { min-width: 0; }
+.document-editor .notebook-topbar { margin-bottom: 24px; }
+.document-save { color: var(--blue); font-weight: 600; min-width: 48px; }
+.document-field { display: block; width: 100%; min-width: 0; box-sizing: border-box; border: 0; border-radius: 0; padding: 4px 0; margin: 0; resize: none; overflow: hidden; background: transparent; color: var(--ink); font: inherit; font-size: 1rem; line-height: 1.85; overflow-wrap: anywhere; }
+.document-title-field { font-size: inherit; font-weight: inherit; line-height: inherit; }
+.document-field:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; border-radius: 4px; }
+.document-field:disabled { opacity: .65; cursor: wait; }
+.notebook-document .original-photo { border-bottom: 0; padding-bottom: 16px; }
+.notebook-document .document-disclosure { border-top: 0; margin-top: 8px; }
+.notebook-document .document-disclosure > summary { min-height: 48px; padding: 12px 0; font-weight: 600; }
+.photo-download-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; color: var(--muted); font-size: .8125rem; }
+.photo-download-row .text-button { color: var(--muted); }
+.document-tools { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 24px 0 8px; }
+.document-tools .text-button { color: var(--muted); }
+.notebook-document .document-message { color: var(--muted); font-size: .875rem; padding-bottom: 16px; }
+.document-field-wrap { position: relative; display: block; min-width: 0; }
+.document-field-measure { position: absolute; width: 1em; height: 1em; visibility: hidden; pointer-events: none; }

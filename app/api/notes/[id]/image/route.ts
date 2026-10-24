@@ -12,7 +12,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (!note || !note.image_ready) return new Response(null, { status: 404, headers });
   try {
     const bytes = await downloadImageObject(note.analysis_image_path);
-    return new Response(new Uint8Array(bytes), { headers: { ...headers, "Content-Type": "image/jpeg" } });
+    return new Response(new Uint8Array(bytes), { headers: { ...headers, "Content-Type": "image/jpeg", ...(new URL(request.url).searchParams.get("download") === "1" ? { "Content-Disposition": `attachment; filename="slimboard-${note.id}.jpg"` } : {}) } });
   } catch {
     return new Response(null, { status: 503, headers });
   }

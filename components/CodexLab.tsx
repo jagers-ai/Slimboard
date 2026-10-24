@@ -39,7 +39,7 @@ export function CodexLab() {
         onChoose={() => choosePhoto(album.current)} />
       <input ref={camera} hidden type="file" accept="image/*" capture="environment" aria-label="화이트보드 촬영" disabled={pending}
         onChange={(event) => { const file = event.target.files?.[0]; if (file) void session.preparePhoto(file); }} />
-      <input ref={album} hidden type="file" accept="image/*" aria-label="앨범에서 사진 선택" disabled={pending}
+      <input ref={album} hidden type="file" accept="image/*" aria-label="사진 첨부" disabled={pending}
         onChange={(event) => { const file = event.target.files?.[0]; if (file) void session.preparePhoto(file); }} />
       {screen === "list" ? (
         <CameraRecords query={query} onQueryChange={setQuery} notes={state.notes} hasDraft={Boolean(state.draft)} disabled={pending}

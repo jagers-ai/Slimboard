@@ -26,7 +26,7 @@ export function CameraActions({ screen, operation, availability, status, error, 
       {screen === "photo" ? <>
         <button className="button primary full-width" disabled={availability !== "ready" || pending} onClick={onAnalyze}>
           {pending || checking ? <LoaderCircle size={20} className="spinner" aria-hidden="true" /> : null}
-          {pending || checking ? status : "내용 정리"}
+          {pending || checking ? status : "변환"}
         </button>
         <button className="text-button full-width" disabled={pending} onClick={onCamera}>다시 촬영</button>
       </> : <>
@@ -34,7 +34,7 @@ export function CameraActions({ screen, operation, availability, status, error, 
           {operation === "preparing" ? <LoaderCircle size={20} className="spinner" aria-hidden="true" /> : <Camera size={20} aria-hidden="true" />}
           {operation === "preparing" ? status : screen === "list" ? "사진 촬영" : "새 사진 촬영"}
         </button>
-        <button className="text-button full-width" disabled={pending} onClick={onAlbum}>앨범에서 선택</button>
+        <button className="text-button full-width" disabled={pending} onClick={onAlbum}>사진 첨부</button>
       </>}
     </div>
   );

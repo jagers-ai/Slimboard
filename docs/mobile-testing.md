@@ -146,3 +146,26 @@ site, home -> search -> home navigation succeeded and the selected synthetic
 photo remained present, with no additional AI request. The draft was cleared and
 sign-out was checked after testing. This is soft navigation, not a persistence
 change; photos remain memory-only until the user submits analysis.
+
+## Editable document UI — 2026-10-25
+
+Approved preview applied: conversion action `변환`, file action `사진 첨부`,
+borderless auto-growing title and raw-text inputs, explicit top-right Save,
+raw text initially open, summary below it initially collapsed, no separate edit
+panel. Keywords are hidden in the document and editor but remain in stored data
+and search_text. Analysis-image download uses the existing owner-checked image
+endpoint with attachment disposition, private no-store caching and no public URL.
+
+Chrome local preview checked at 320x740, 402x874, 412x915 and 874x402 with 16px
+and 32px root text: no horizontal overflow, no clipped title/raw text, controls
+at least 48px high. Summary expansion resizes its field correctly. An anonymous
+Save failure retained the changed title; the fixture never touched user data.
+An observed ResizeObserver feedback warning was fixed by scheduling resize in
+an animation frame and observing a font-sized measure element for text zoom.
+The temporary preview route and synthetic public image were removed before build.
+
+23 live Supabase HTTP checks passed, including owner download, other-account
+404, anonymous 401, and hidden keyword search after editing/recovery replay.
+83 automated checks and one actual Worker runtime integration passed. No AI
+analysis calls were needed for this UI change. Physical device camera behavior
+is outside this desktop verification.
