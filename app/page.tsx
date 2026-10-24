@@ -2,9 +2,7 @@ import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "@/components/AppLink";
 import { BookOpen, Search, Sparkles } from "lucide-react";
 
-import { BottomDock } from "@/components/BottomDock";
-import { NoteList } from "@/components/NoteList";
-import { listNotesForUser } from "@/lib/notes";
+import { AppFrame } from "@/components/AppFrame";
 import { CaptureUploader } from "@/components/CaptureUploader";
 import { SignInButton } from "@/components/SignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
@@ -26,10 +24,9 @@ export default async function Home() {
   }
 
   await ensurePersonalWorkspace(user);
-  const notes = await listNotesForUser({ userId: user.id });
 
   return (
-    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell">
+    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="home">
       <header className="topbar">
         <Link className="brand" href="/">
           슬림보드
@@ -38,20 +35,16 @@ export default async function Home() {
       </header>
 
       <section className="dashboard">
-        <div className="section-heading"><h1 className="page-title">기록</h1></div>
-        <Link className="notebook-search" href="/search"><Search size={20} />기록 검색</Link>
-        <NoteList notes={notes} emptyText="첫 사진을 노트로 남겨보세요." />
         <CaptureUploader key={user.id} userId={user.id} />
       </section>
 
-      <BottomDock active="home" />
-    </main></AccountBoundary>
+    </AppFrame></AccountBoundary>
   );
 }
 
 function Landing() {
   return (
-    <main className="app-shell landing-shell">
+    <AppFrame active="home" className="landing-shell">
       <header className="topbar">
         <div className="brand">
           슬림보드
@@ -101,14 +94,13 @@ function Landing() {
         </div>
       </section>
 
-      <BottomDock active="home" />
-    </main>
+    </AppFrame>
   );
 }
 
 function SetupScreen() {
   return (
-    <main className="app-shell">
+    <AppFrame active="home">
       <section className="setup-panel">
         <span className="eyebrow">설정 필요</span>
         <h1>앱 설정이 필요합니다</h1>
@@ -117,7 +109,6 @@ function SetupScreen() {
         </p>
       </section>
 
-      <BottomDock active="home" />
-    </main>
+    </AppFrame>
   );
 }

@@ -21,7 +21,11 @@ export function CaptureUploader({ userId }: { userId: string }) {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useUnloadWarning(Boolean(file));
   const previewUrl = useObjectUrl(file);
-  useEffect(() => { if (file) headingRef.current?.focus(); }, [file]);
+  useEffect(() => {
+    if (!file) return;
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.closest(".app-scroll")?.scrollTo({ top: 0 });
+  }, [file]);
   const submitting = useRef(false);
   const [stage, setStage] = useState<"idle" | "preparing" | "uploading" | "analyzing" | "saving">("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -85,8 +89,11 @@ export function CaptureUploader({ userId }: { userId: string }) {
   const busy = stage !== "idle";
 
   return (
-    <section className="panel capture-panel" id="capture" aria-busy={busy}>
-      {file ? <div className="section-heading compact"><h2 ref={headingRef} tabIndex={-1}>사진 확인</h2><p className="muted">글씨가 잘 보이는지 확인해 주세요.</p></div> : null}
+    <section className={`panel capture-panel capture-home ${file ? "has-photo" : "is-empty"}`} id="capture" aria-busy={busy}>
+      <div className="section-heading compact">
+        <h1 className="page-title" ref={headingRef} tabIndex={-1}>{file ? "사진 확인" : "사진을 노트로"}</h1>
+        <p className="muted">{file ? "글씨가 잘 보이는지 확인해 주세요." : "촬영하거나 사진을 첨부해 주세요."}</p>
+      </div>
 
       <input
         ref={cameraInputRef}
@@ -118,9 +125,9 @@ export function CaptureUploader({ userId }: { userId: string }) {
             <span>화이트보드가 선명하게 보이는 사진이 좋아요.</span>
           </div>
         )}
-      </div> : null}
+      </div> : <div className="capture-placeholder" aria-hidden="true"><Camera size={44} /><p>사진을 촬영하거나<br />첨부해 주세요.</p></div>}
 
-      <div className="split-actions">
+      <div className="split-actions capture-actions">
         <button
           className={file ? "button" : "button primary"}
           type="button"
@@ -160,7 +167,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
       </button> : null}
 
       {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 클라우드에 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}
-      <p className="session-caption">사진은 분석에 필요한 크기로 저장됩니다. 원본 파일은 별도로 보관하지 않아요.</p>
+      {file ? <p className="session-caption">사진은 분석에 필요한 크기로 저장됩니다. 원본 파일은 별도로 보관하지 않아요.</p> : null}
       {draft.uploaded && draft.noteId ? <a className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</a> : null}
       {message ? <p className="inline-message" role="status">{message}</p> : null}
     </section>

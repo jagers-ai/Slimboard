@@ -1,5 +1,5 @@
 import { AccountBoundary } from "@/components/AccountBoundary";
-import { BottomDock } from "@/components/BottomDock";
+import { AppFrame } from "@/components/AppFrame";
 import { RecentSearches } from "@/components/RecentSearches";
 import { SearchForm } from "@/components/SearchForm";
 import { SearchResults } from "@/components/SearchResults";
@@ -17,14 +17,13 @@ type SearchPageProps = {
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   if (!hasCoreEnv()) {
     return (
-      <main className="app-shell search-shell">
+      <AppFrame active="search" className="search-shell">
         <SearchForm />
         <div className="search-empty">
           <strong>앱 설정이 필요합니다.</strong>
           <p>현재 Slimboard를 사용할 수 없습니다. 관리자에게 문의해주세요.</p>
         </div>
-        <BottomDock active="search" />
-      </main>
+      </AppFrame>
     );
   }
 
@@ -43,12 +42,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const recentSearches = q ? [] : await listRecentSearchesForUser(user.id);
 
   return (
-    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell search-shell">
+    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="search" className="search-shell">
       <SearchForm initialQuery={q} />
 
       {q ? <SearchResults notes={notes} query={q} /> : <RecentSearches recentSearches={recentSearches} />}
 
-      <BottomDock active="search" />
-    </main></AccountBoundary>
+    </AppFrame></AccountBoundary>
   );
 }

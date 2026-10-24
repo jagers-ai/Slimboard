@@ -35,7 +35,8 @@ including the camera lab and the signed-in application. Read it before UI work;
 
 ## Flow and controls
 
-- Records: search, actual records, primary photo capture, secondary album selection. Never seed fake records.
+- Home: photo capture and attachment only, followed immediately by photo review.
+- Notes tab: saved records and a record-search entry. Never put the saved list above capture on Home; never seed fake records.
 - Review: large uncropped photo, clear reselect/back controls, one primary `변환` action, with `사진 첨부` for album/file selection.
 - Result: editable title, analysis photo with download, then an initially open editable full transcription. Summary comes below as a collapsed disclosure. Keywords remain stored and searchable but are not rendered.
 - Saved notes are a continuous editable document, not a separate `노트 수정` form. Use borderless auto-growing fields, a top-right `저장` action, and quiet reanalysis/deletion actions. Keep explicit labels, visible focus and pending/error/draft behavior.
@@ -47,7 +48,7 @@ including the camera lab and the signed-in application. Read it before UI work;
 - Support Safari/iOS and Chrome/Android through responsive layout, not device detection.
 - Keep camera capture and album inputs separate. Preserve client image preparation and orientation handling in the lab.
 - Honor all four safe-area insets, allow zoom, use at least 48px touch targets and 16px form fields.
-- Keep actions in normal document flow with a flex spacer: no overlay hiding content when the keyboard opens or text grows.
+- Use `AppFrame` for the main app: the content scrolls in a dedicated row, and bottom navigation occupies a separate persistent row. Follow the visible viewport when the keyboard opens; never overlay controls or crop enlarged text.
 - Allow 200% text and long content to wrap; landscape remains scrollable.
 - Use visible keyboard focus, real labels, live status, disabled actions during work, and focus the heading on stage changes.
 - Respect reduced motion. Do not add fake OS chrome or model/authentication explanations to the product screen.
@@ -59,7 +60,7 @@ Responsive browser checks do not establish physical phone behavior. Record the e
 ## Saved records and mobile navigation
 
 - Saved records use one analysis JPEG for preview and detail; label the disclosure `사진 보기`. Never promise original resolution or automatic photo-library saving.
-- Keep the shared bottom navigation in normal document flow. It must not cover editing controls with a keyboard or 200% text.
+- Keep bottom navigation visible in its own `AppFrame` row on Home, Notes, Search and note details. Content scrolls above it; navigation must not cover editing controls with a keyboard or 200% text.
 - Photo and editor drafts are account-scoped memory only, retained through in-app navigation and cleared on sign-out. Failed result saves offer `노트 저장 다시 시도`, which must not start another AI request.
 
 ## Signed-out home layout
@@ -67,7 +68,7 @@ Responsive browser checks do not establish physical phone behavior. Record the e
 Keep the brand and introduction top-aligned with a shared left gutter. Use a
 28px header-to-introduction gap and content-sized hero; no fixed-height hero
 or bottom alignment inside it. Leave flexible space below the feature list
-and above the bottom navigation, which remains in normal document flow.
+and above the bottom navigation in its separate persistent row.
 
 ## KakaoTalk entry
 
@@ -78,3 +79,12 @@ requires a tap; do not auto-redirect or transfer login codes/session tokens.
 Offer default-browser handoff, link copying and selectable-address recovery.
 Regular browsers keep the existing flow. Physical-device app switching remains
 a separate acceptance check from browser emulation.
+
+## Home photo review
+
+The empty Home screen has a clear heading, a quiet camera placeholder, and
+large capture/attachment actions. After selection, show the uncropped preview
+first, then reselect/remove controls and the primary conversion action. Bound
+the preview height to the viewport so normal portrait layouts can show the
+conversion button; landscape and enlarged text scroll above the dock. Preserve
+the account-scoped photo draft across tab navigation.

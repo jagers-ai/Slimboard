@@ -2,7 +2,8 @@ import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "@/components/AppLink";
 import { Search } from "lucide-react";
 
-import { BottomDock } from "@/components/BottomDock";
+import { AppFrame } from "@/components/AppFrame";
+import { SignOutButton } from "@/components/SignOutButton";
 import { NoteList } from "@/components/NoteList";
 import { hasCoreEnv } from "@/lib/env";
 import { requireUser } from "@/lib/auth";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function NotesPage() {
   if (!hasCoreEnv()) {
     return (
-      <main className="app-shell">
+      <AppFrame active="notes">
         <section className="setup-panel">
           <span className="eyebrow">설정 필요</span>
           <h1>앱 설정이 필요합니다</h1>
@@ -21,8 +22,7 @@ export default async function NotesPage() {
             현재 Slimboard를 사용할 수 없습니다. 관리자에게 문의해주세요.
           </p>
         </section>
-        <BottomDock active="notes" />
-      </main>
+      </AppFrame>
     );
   }
 
@@ -33,21 +33,21 @@ export default async function NotesPage() {
   });
 
   return (
-    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell">
+    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="notes">
       <header className="topbar">
         <Link className="brand" href="/">슬림보드</Link>
-        <Link className="text-button icon-button" href="/search" aria-label="기록 검색"><Search size={22} /></Link>
+        <SignOutButton email={user.email ?? ""} />
       </header>
 
       <section className="section-stack">
         <div className="section-heading">
-          <h1 className="page-title">기록</h1>
+          <h1 className="page-title">노트</h1>
         </div>
 
-        <NoteList emptyText="첫 화이트보드를 저장해보세요." notes={notes} />
+        <Link className="notebook-search" href="/search"><Search size={20} aria-hidden="true" />기록 검색</Link>
+        <NoteList emptyText="홈에서 첫 사진을 노트로 남겨보세요." notes={notes} />
       </section>
 
-      <BottomDock active="notes" />
-    </main></AccountBoundary>
+    </AppFrame></AccountBoundary>
   );
 }
