@@ -1,4 +1,5 @@
 "use client";
+import { readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
@@ -36,7 +37,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
         formData.append("image", file);
         formData.append("noteId", draft.noteId);
         const upload = await fetch("/api/notes", { method: "POST", body: formData });
-        const payload = await upload.json();
+        const payload = await readNoteResponse(upload);
         if (!upload.ok) throw new Error(payload.error ?? "사진을 저장하지 못했어요.");
         setDraft(current => ({ ...current, uploaded: true }));
       }
@@ -45,8 +46,8 @@ export function CaptureUploader({ userId }: { userId: string }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draft.recovery ? { recovery: draft.recovery } : {}),
       });
-      const payload = await response.json();
-      if (payload.recovery) setDraft(current => ({ ...current, recovery: payload.recovery }));
+      const payload = await readNoteResponse(response);
+      if (payload.recovery) { const recovery = payload.recovery; setDraft(current => ({ ...current, recovery })); }
       if (!response.ok) throw new Error(payload.error ?? "처리하지 못했어요.");
       clearDraft();
       if (mounted.current) router.push(`/notes/${draft.noteId}`);

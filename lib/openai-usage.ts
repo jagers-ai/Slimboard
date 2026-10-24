@@ -1,9 +1,3 @@
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
-export const USAGE_DIRECTORY = join(homedir(), ".slimboard", "usage");
 export const PRICING_DATE = "2026-10-24";
 export const USD_KRW_REFERENCE = 1400; // Reference conversion, not a live/card FX rate.
 
@@ -93,24 +87,13 @@ export type UsageRecord = {
   cost: ReturnType<typeof estimateUsageCost>;
 };
 
-export async function appendUsageRecord(record: UsageRecord, directory = USAGE_DIRECTORY) {
-  if (directory === USAGE_DIRECTORY) {
-    const parent = join(homedir(), ".slimboard");
-    await mkdir(parent, { recursive: true, mode: 0o700 });
-    if (!(await lstat(parent)).isDirectory()) throw new Error("Invalid usage directory");
-  }
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  if (!(await lstat(directory)).isDirectory()) throw new Error("Invalid usage directory");
-  await chmod(directory, 0o700);
-  const month = record.timestamp.slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Invalid usage date");
-  const path = join(directory, `openai-${month}.jsonl`);
-  const file = await open(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
-  try {
-    const stat = await file.stat();
-    if (!stat.isFile() || stat.nlink !== 1) throw new Error("Invalid usage file");
-    await file.chmod(0o600);
-    await file.writeFile(JSON.stringify(record) + "\n");
-    await file.sync();
-  } finally { await file.close(); }
+// Private, durable accounting in the Site database. Never exposed by a route.
+export async function appendUsageRecord(record: UsageRecord) {
+  const { env } = await import("cloudflare:workers");
+  if (!env.DB) throw new Error("Private usage storage unavailable");
+  await writeUsageRecord(record, env.DB);
+}
+export async function writeUsageRecord(record: UsageRecord, database: Pick<D1Database, "prepare">) {
+  await database.prepare("INSERT INTO openai_usage (id, timestamp, record) VALUES (?, ?, ?)")
+    .bind(record.id, record.timestamp, JSON.stringify(record)).run();
 }

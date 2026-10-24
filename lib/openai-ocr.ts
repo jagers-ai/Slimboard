@@ -106,7 +106,8 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
   try {
     const response = await (options.fetch ?? fetch)("https://api.openai.com/v1/responses", {
       method: "POST",
-      redirect: "error",
+      // Workers supports manual redirects; never forward the key to a redirect target.
+      redirect: "manual",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({

@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, readFile, stat, rm, symlink, writeFile, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendUsageRecord, estimateUsageCost, readTokenUsage } from "../lib/openai-usage.ts";
+import { writeUsageRecord, estimateUsageCost, readTokenUsage } from "../lib/openai-usage.ts";
 
 const raw = {
   input_tokens: 12000,
@@ -61,33 +61,15 @@ const record = {
   cost: estimateUsageCost(readTokenUsage(raw), "gpt-6.1-sol", "default"),
 };
 
-test("usage records append as private JSONL and concurrent requests remain distinct", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "slimboard-usage-"));
-  try {
-    await Promise.all(Array.from({ length: 10 }, (_, i) => appendUsageRecord({ ...record, id: `test-${i}` }, directory)));
-    const file = join(directory, "openai-2026-10.jsonl");
-    const rows = (await readFile(file, "utf8")).trim().split("\n").map(JSON.parse);
-    assert.equal(rows.length, 10);
-    assert.equal(new Set(rows.map((r) => r.id)).size, 10);
-    assert.equal((await stat(directory)).mode & 0o777, 0o700);
-    assert.equal((await stat(file)).mode & 0o777, 0o600);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+test("durable private usage write stores one parameterized record", async () => {
+  let sql, parameters, writes = 0;
+  const database = { prepare(query) { sql = query; return { bind(...values) { parameters = values; return { async run() { writes++; } }; } }; } };
+  await writeUsageRecord(record, database);
+  assert.match(sql, /INSERT INTO openai_usage/);
+  assert.equal(writes, 1);
+  assert.deepEqual(parameters, [record.id, record.timestamp, JSON.stringify(record)]);
 });
-
-test("log writes refuse symlink directories, symlink files and hardlinked targets", async () => {
-  const root = await mkdtemp(join(tmpdir(), "slimboard-usage-links-"));
-  try {
-    const target = join(root, "keep.txt");
-    await writeFile(target, "keep unchanged");
-    const directory = join(root, "alias");
-    await symlink(root, directory);
-    await assert.rejects(appendUsageRecord(record, directory));
-    const file = join(root, "openai-2026-10.jsonl");
-    await symlink(target, file);
-    await assert.rejects(appendUsageRecord(record, root));
-    await rm(file);
-    await link(target, file);
-    await assert.rejects(appendUsageRecord(record, root));
-    assert.equal(await readFile(target, "utf8"), "keep unchanged");
-  } finally { await rm(root, { recursive: true, force: true }); }
+test("a failed usage write is reported and never retries a paid analysis", async () => {
+  const database = { prepare() { return { bind() { return { async run() { throw Error("storage unavailable"); } }; } }; } };
+  await assert.rejects(writeUsageRecord(record, database));
 });

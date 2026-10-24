@@ -1,5 +1,5 @@
 // Browser-only preparation. Canvas keeps the browser's EXIF orientation and
-// removes camera metadata before the temporary lab sends a JPEG to the server.
+// removes camera metadata before the app sends a JPEG to the server.
 export async function prepareCameraPhoto(selected: File): Promise<File> {
   if (!selected.size) throw new Error("비어 있는 사진이에요. 다른 사진을 선택해주세요.");
   if (selected.size > 40 * 1024 * 1024) {
@@ -16,7 +16,7 @@ export async function prepareCameraPhoto(selected: File): Promise<File> {
     try { await image.decode(); } catch {
       throw new Error("이 사진을 열 수 없어요. JPG 사진을 선택하거나 다시 촬영해주세요.");
     }
-    const scale = Math.min(1, 3000 / Math.max(image.naturalWidth, image.naturalHeight));
+    const scale = Math.min(1, 2560 / Math.max(image.naturalWidth, image.naturalHeight));
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     const context = canvas.getContext("2d");
@@ -24,7 +24,7 @@ export async function prepareCameraPhoto(selected: File): Promise<File> {
     context.fillStyle = "white";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    for (const quality of [0.9, 0.8, 0.7]) {
+    for (const quality of [0.86, 0.8, 0.7]) {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
       if (!blob) break;
       if (blob.size <= 10 * 1024 * 1024) return new File([blob], "whiteboard.jpg", { type: "image/jpeg" });

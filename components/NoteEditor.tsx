@@ -1,4 +1,5 @@
 "use client";
+import { readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -42,7 +43,7 @@ export function NoteEditor({ note, userId }: { note: NoteEditorNote; userId: str
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, rawText, summary }),
       });
-      const payload = await response.json();
+      const payload = await readNoteResponse(response);
 
       if (!response.ok) {
         throw new Error(payload.error ?? "저장에 실패했어요.");
@@ -73,13 +74,14 @@ export function NoteEditor({ note, userId }: { note: NoteEditorNote; userId: str
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(recovery ? { recovery } : { force: true }),
       });
-      const payload = await response.json();
+      const payload = await readNoteResponse(response);
 
-      if (payload.recovery) setDraft(current => ({ ...current, recovery: payload.recovery }));
+      if (payload.recovery) { const recovery = payload.recovery; setDraft(current => ({ ...current, recovery })); }
       if (!response.ok) {
         throw new Error(payload.error ?? "분석에 실패했어요.");
       }
 
+      if (!payload.note) throw new Error("저장된 노트를 확인하지 못했어요.");
       setDraft({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary, recovery: null });
       clearDraft();
       setSaved({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary });
@@ -108,7 +110,7 @@ export function NoteEditor({ note, userId }: { note: NoteEditorNote; userId: str
       });
 
       if (!response.ok) {
-        const payload = await response.json();
+        const payload = await readNoteResponse(response);
         throw new Error(payload.error ?? "삭제에 실패했어요.");
       }
 

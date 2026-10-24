@@ -19,7 +19,7 @@ test("uses the existing server key for one structured vision request and returns
       calls++;
       assert.equal(url, "https://api.openai.com/v1/responses");
       assert.equal(init.headers.Authorization, "Bearer test-private-key");
-      assert.equal(init.redirect, "error");
+      assert.equal(init.redirect, "manual");
       const body = JSON.parse(init.body);
       assert.equal(body.model, "gpt-6.1-sol");
       assert.equal(body.reasoning.effort, "medium");
@@ -140,4 +140,13 @@ test("a timeout while receiving the response body is recorded as unknown usage",
   assert.equal(records[0].errorCode, "TIMEOUT");
   assert.equal(records[0].usage, null);
   assert.equal(records[0].cost, null);
+});
+
+test("provider redirects are rejected without forwarding credentials", async () => {
+  let calls = 0;
+  await assert.rejects(analyzeWithOpenAI(image, "image/jpeg", { apiKey: "test", fetch: async (_url, init) => {
+    calls++; assert.equal(init.redirect, "manual");
+    return new Response(null, { status: 307, headers: { Location: "https://other.invalid" } });
+  }}), error => error.code === "HTTP_307");
+  assert.equal(calls, 1);
 });

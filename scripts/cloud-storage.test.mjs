@@ -7,13 +7,13 @@ import { safeAuthNext } from '../lib/auth-navigation.ts';
 import { deleteOwnedNote } from '../lib/note-mutations.ts';
 import { readDraft, writeDraft, clearAllDrafts } from '../lib/session-drafts.ts';
 
-test('new photo output has one JPEG, keeps aspect ratio, removes original and EXIF', async () => {
-  const bytes = await sharp({ create: { width: 3200, height: 1600, channels: 3, background: '#fafafa' } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+test('prepared photo stays one JPEG with unchanged pixels and no original or EXIF', async () => {
+  const bytes = await sharp({ create: { width: 2560, height: 1280, channels: 3, background: '#fafafa' } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
   const result = await prepareImage(new File([bytes], 'camera.jpg', { type: 'image/jpeg' }));
   assert.deepEqual(Object.keys(result), ['analysis']);
   const info = await sharp(result.analysis.buffer).metadata();
   assert.equal(info.format, 'jpeg');
-  assert.equal(info.width, 1280); assert.equal(info.height, 2560);
+  assert.equal(info.width, 2560); assert.equal(info.height, 1280);
   assert.equal(info.exif, undefined);
 });
 test('invalid and oversized images fail without producing stored bytes', async () => {

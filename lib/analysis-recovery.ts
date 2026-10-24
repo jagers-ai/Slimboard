@@ -5,7 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 export function sealRecovery(value: object, secret: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(`slimboard-recovery-v1:${secret}`).digest(), iv);
-  const bytes = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
+  const bytes = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(value), "utf8")), cipher.final()]);
   return Buffer.concat([iv, cipher.getAuthTag(), bytes]).toString("base64url");
 }
 export function openRecovery<T>(token: string, secret: string): T {
