@@ -1,4 +1,5 @@
 import type { ReactNode, Ref } from "react";
+import { PhotoZoom } from "@/components/PhotoZoom";
 import { ChevronDown, Download } from "lucide-react";
 import { formatNoteDate } from "@/lib/note-date";
 import type { WhiteboardAnalysis } from "@/lib/types";
@@ -31,7 +32,8 @@ export function NoteDocument({ analysis, createdAt, photoUrl, includeTime, headi
             <span>사진 보기</span>
             <ChevronDown size={20} aria-hidden="true" />
           </summary>
-          <img className="expanded-photo" src={photoUrl} alt="노트에 저장된 사진" loading="lazy" />
+          <PhotoZoom className="note-photo-zoom" src={photoUrl} alt="노트에 저장된 사진" downloadUrl={downloadUrl} />
+          <p className="photo-zoom-hint">사진을 누르면 크게 볼 수 있어요.</p>
           {downloadUrl ? <div className="photo-download-row"><span>분석용 이미지</span><a className="text-button" href={downloadUrl} download><Download size={18} />사진 다운로드</a></div> : null}
         </details>
       ) : null}

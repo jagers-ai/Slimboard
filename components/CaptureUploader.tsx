@@ -1,4 +1,5 @@
 "use client";
+import { PhotoZoom } from "@/components/PhotoZoom";
 import { readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
@@ -117,7 +118,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
 
       {file ? <div className="upload-preview">
         {previewUrl ? (
-          <img alt="선택한 화이트보드" src={previewUrl} />
+          <PhotoZoom alt="선택한 화이트보드" src={previewUrl} downloadUrl={previewUrl} className="capture-photo-zoom" />
         ) : (
           <div className="upload-empty">
             <ImageUp size={28} />
@@ -127,6 +128,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
         )}
       </div> : <div className="capture-placeholder" aria-hidden="true"><Camera size={44} /><p>사진을 촬영하거나<br />첨부해 주세요.</p></div>}
 
+      {file && previewUrl ? <p className="photo-zoom-hint">사진을 누르면 크게 볼 수 있어요.</p> : null}
       <div className="split-actions capture-actions">
         <button
           className={file ? "button" : "button primary"}

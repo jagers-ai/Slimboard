@@ -88,3 +88,14 @@ first, then reselect/remove controls and the primary conversion action. Bound
 the preview height to the viewport so normal portrait layouts can show the
 conversion button; landscape and enlarged text scroll above the dock. Preserve
 the account-scoped photo draft across tab navigation.
+
+## Photo enlargement
+
+Use shared `PhotoZoom` for capture review, saved-note photos and the camera lab.
+Tapping the photo opens a native modal dialog above the entire app and dock.
+Start at viewport width; provide zoom in/out, fit-to-screen, and close controls.
+Allow drag/scroll panning, preserve the underlying scroll position and drafts,
+and return keyboard focus to the invoking photo on close. Download uses only
+the existing authorized image endpoint or the selected local analysis image.
+The modal must support Escape, focus containment, safe areas, enlarged text,
+loading/error/retry states and at least 48px controls.
