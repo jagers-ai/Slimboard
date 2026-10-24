@@ -169,3 +169,15 @@ The temporary preview route and synthetic public image were removed before build
 83 automated checks and one actual Worker runtime integration passed. No AI
 analysis calls were needed for this UI change. Physical device camera behavior
 is outside this desktop verification.
+
+## Signed-out home spacing — 2026-10-25
+
+Scoped the approved top-aligned landing layout to `.landing-shell`. Removed the
+360px minimum-height/bottom-aligned hero and extra horizontal hero/feature padding.
+Brand, introduction and features now share a gutter. Header gap is 28px; flexible
+space goes below the features, before the normal-flow bottom navigation.
+
+Chrome local preview: 320x740, 402x874, 412x915 and 874x402 at 16px and 32px
+root text (8 combinations). All have matching left alignment, a 28px header gap,
+no horizontal overflow, >=48px controls, and navigation below the feature list.
+No authentication, API, saved-note or signed-in records behavior changed.

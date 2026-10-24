@@ -61,3 +61,10 @@ Responsive browser checks do not establish physical phone behavior. Record the e
 - Saved records use one analysis JPEG for preview and detail; label the disclosure `사진 보기`. Never promise original resolution or automatic photo-library saving.
 - Keep the shared bottom navigation in normal document flow. It must not cover editing controls with a keyboard or 200% text.
 - Photo and editor drafts are account-scoped memory only, retained through in-app navigation and cleared on sign-out. Failed result saves offer `노트 저장 다시 시도`, which must not start another AI request.
+
+## Signed-out home layout
+
+Keep the brand and introduction top-aligned with a shared left gutter. Use a
+28px header-to-introduction gap and content-sized hero; no fixed-height hero
+or bottom alignment inside it. Leave flexible space below the feature list
+and above the bottom navigation, which remains in normal document flow.

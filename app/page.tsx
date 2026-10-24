@@ -51,7 +51,7 @@ export default async function Home() {
 
 function Landing() {
   return (
-    <main className="app-shell">
+    <main className="app-shell landing-shell">
       <header className="topbar">
         <div className="brand">
           슬림보드
