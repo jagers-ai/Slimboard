@@ -3,6 +3,27 @@
 Direction: a clear working notebook. Photographs and readable records carry the identity.
 The approved October 24, 2026 concept uses three stages: records, photo review, and a readable note.
 
+## Scope and implementation
+
+This is the shared design contract for all Slimboard user-facing pages and features,
+including the camera lab and the signed-in application. Read it before UI work;
+`AGENTS.md` defines the implementation and verification obligations.
+
+- Reuse the shared variables and foundations in `app/globals.css`, notebook patterns
+  in `app/notebook.css`, and existing components under `components/`. For example,
+  `NoteDocument` is the shared note-reading view and `components/camera/` contains
+  the camera flow's screen parts.
+- Existing CSS has legacy variable names: `--blue` and `--blue-dark` currently mean
+  the primary deep green (`#205943`), not a separate blue palette. Use the existing
+  tokens consistently; do not introduce a second palette based on their names.
+- An old screen or isolated hard-coded value does not override this document.
+  When touching an inconsistent area, align the affected UI with these rules and
+  check its shared consumers without expanding into an unrelated redesign.
+- Extend shared patterns for new features. Document a reusable addition here in
+  the same change; keep design-direction changes within the user's requested scope.
+- Include applicable empty, loading, error, retry, and disabled states. State
+  what happened and provide a clear next action; preserve recoverable user input.
+
 ## Visual system
 
 - White canvas, near-black text (`#18221d`), muted secondary text (`#68716c`), thin dividers (`#e4e8e5`).
