@@ -1,5 +1,7 @@
 # ChatGPT Sites deployment
 
+For current branch, known issues and another-Mac setup, read [handoff.md](handoff.md) first. The verification counts below describe earlier milestones, not the latest state.
+
 This deployment is based on jagers-ai/Slimboard commit
 8fdf321e7667dda1360b602cc9d6b77074660194 (experiment/chatgpt-plan-ocr).
 The original Mac checkout is preserved. This checkout runs the same app through
