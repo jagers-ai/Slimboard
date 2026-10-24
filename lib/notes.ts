@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { openRecovery, sealRecovery, saveAnalysisResult } from "@/lib/analysis-recovery";
 import { deleteOwnedNote, getOwnedNote } from "@/lib/note-mutations";
 import {
   ANALYSIS_VERSION,
@@ -8,8 +10,6 @@ import type { AppUser } from "@/lib/auth";
 import { buildSearchText } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  createSignedImageUrl,
-  createSignedImageUrls,
   downloadImageObject,
   removeImageObjects,
 } from "@/lib/storage";
@@ -31,16 +31,11 @@ export async function listNotesForUser(input: {
   includeImageUrl?: boolean;
 }) {
   const supabase = createAdminClient();
-  const workspaceIds = await getAccessibleWorkspaceIds(input.userId);
-
-  if (workspaceIds.length === 0) {
-    return [];
-  }
 
   let query = supabase
     .from("whiteboard_notes")
     .select(NOTE_PREVIEW_SELECT)
-    .in("workspace_id", workspaceIds)
+    .eq("owner_user_id", input.userId)
     .order("created_at", { ascending: false })
     .limit(input.limit ?? 30);
 
@@ -65,27 +60,20 @@ export async function listNotesForUser(input: {
     })) satisfies NotePreview[];
   }
 
-  const signedUrls = await createSignedImageUrls(notes.map((note) => note.analysis_image_path));
-
   return notes.map((note) => ({
     ...note,
-    image_url: signedUrls.get(note.analysis_image_path) ?? null,
+    image_url: `/api/notes/${note.id}/image`,
   })) satisfies NotePreview[];
 }
 
 export async function getNoteForUser(noteId: string, userId: string) {
   const supabase = createAdminClient();
-  const workspaceIds = await getAccessibleWorkspaceIds(userId);
-
-  if (workspaceIds.length === 0) {
-    return null;
-  }
 
   const { data, error } = await supabase
     .from("whiteboard_notes")
     .select("*")
     .eq("id", noteId)
-    .in("workspace_id", workspaceIds)
+    .eq("owner_user_id", userId)
     .maybeSingle();
 
   if (error) {
@@ -104,7 +92,7 @@ export async function getNoteWithImageUrl(noteId: string, userId: string) {
 
   return {
     ...note,
-    image_url: await createSignedImageUrl(note.original_image_path),
+    image_url: `/api/notes/${note.id}/image`,
   } satisfies NoteWithImageUrl;
 }
 
@@ -141,6 +129,7 @@ export async function updateNoteForUser(input: {
     })
     .eq("id", input.noteId)
     .eq("owner_user_id", input.userId)
+    .or("status.neq.processing,analysis_attempt.is.null")
     .select("*")
     .single();
 
@@ -160,76 +149,82 @@ export async function deleteNoteForUser(noteId: string, userId: string) {
         .delete()
         .eq("id", id)
         .eq("owner_user_id", ownerId)
+        .or("status.neq.processing,analysis_attempt.is.null")
         .select("id")
         .maybeSingle();
       if (error) throw error;
       return Boolean(data);
     },
-    removeImages: removeImageObjects,
+    removeImages: async paths => {
+      await removeImageObjects(paths);
+      const { error } = await createAdminClient().from("note_image_cleanup").delete().eq("note_id", noteId).eq("owner_user_id", userId);
+      if (error) throw error;
+    },
     onCleanupFailure: () => console.warn("Deleted note image cleanup failed; storage cleanup required."),
   });
 }
 
-export async function analyzeNoteForUser(noteId: string, user: AppUser) {
+type AnalysisUpdate = ReturnType<typeof mapAnalysisToUpdate>;
+type Recovery = { owner: string; note: string; attempt: string; expires: number; update: AnalysisUpdate };
+
+export class NoteOperationError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+export async function analyzeNoteForUser(noteId: string, user: AppUser, options: { recovery?: string; force?: boolean } = {}) {
   const supabase = createAdminClient();
   const note = await getOwnedNote(noteId, user.id, getNoteForUser);
-
-  if (!note) {
-    throw new Error("Note not found.");
-  }
-
-  const { data: started, error: startError } = await supabase
-    .from("whiteboard_notes")
-    .update({
-      status: "processing",
-      error_message: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", noteId)
-    .eq("owner_user_id", user.id)
-    .select("id")
-    .maybeSingle();
-  if (startError) throw startError;
-  if (!started) throw new Error("Note not found.");
-
-  try {
-    const analysisImage = await downloadImageObject(note.analysis_image_path);
-    const result = await analyzeWhiteboardImage({
-      buffer: analysisImage,
-      mimeType: "image/jpeg",
-    });
-
-    const update = mapAnalysisToUpdate(result.analysis, {
-      model: result.model,
-    });
-
-    const { data, error } = await supabase
-      .from("whiteboard_notes")
-      .update(update)
-      .eq("id", noteId)
-      .eq("owner_user_id", user.id)
-      .select("*")
-      .single();
-
-    if (error) {
-      throw error;
+  if (!note) throw new NoteOperationError("기록을 찾을 수 없어요.", 404);
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const persist = async (attempt: string, update: AnalysisUpdate) => {
+    const { data, error } = await supabase.from("whiteboard_notes").update(update)
+      .eq("id", noteId).eq("owner_user_id", user.id).eq("analysis_attempt", attempt).eq("status", "processing").select("*").maybeSingle();
+    if (error) throw new Error("Result save failed");
+    if (data) return data as WhiteboardNote;
+    // The first write may have committed even if its response was lost. Read
+    // through instead of overwriting a later human edit with the AI result.
+    const current = await getNoteForUser(noteId, user.id);
+    if (current?.analysis_attempt === attempt && current.status === "completed") return current;
+    throw new Error("Result save failed");
+  };
+  if (options.recovery) {
+    let receipt: Recovery;
+    try { receipt = openRecovery<Recovery>(options.recovery, secret); }
+    catch { throw new NoteOperationError("저장 정보를 확인하지 못했어요.", 400); }
+    if (receipt.owner !== user.id || receipt.note !== noteId || receipt.expires < Date.now() || receipt.attempt !== note.analysis_attempt) {
+      throw new NoteOperationError("이 기록의 저장 정보가 만료되었거나 변경됐어요.", 409);
     }
-
-    return data as WhiteboardNote;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Analysis failed.";
-    await supabase
-      .from("whiteboard_notes")
-      .update({
-        status: "failed",
-        error_message: message,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", noteId)
-      .eq("owner_user_id", user.id);
-
-    throw error;
+    if (note.status === "completed") return { note };
+    if (note.status !== "processing") throw new NoteOperationError("기록 상태가 변경됐어요.", 409);
+    return saveAnalysisResult(() => persist(receipt.attempt, receipt.update), options.recovery);
   }
+  const attempt = randomUUID();
+  const { data: claim, error: claimError } = await supabase.rpc("claim_note_analysis", {
+    p_note: noteId, p_owner: user.id, p_attempt: attempt, p_force: options.force === true,
+  });
+  if (claimError) throw new NoteOperationError("분석을 준비하지 못했어요. 잠시 뒤 다시 시도해주세요.", 503);
+  if (claim === "completed") return { note: await getNoteForUser(noteId, user.id) };
+  if (claim !== "claimed") {
+    const messages: Record<string, string> = {
+      busy: "이미 분석 중이거나 이전 요청의 결과를 확인 중이에요. 중복 분석은 시작하지 않았어요.",
+      image_pending: "사진 저장을 먼저 완료해주세요.",
+      retry_required: "이전 분석이 실패했어요. 기록 화면에서 재분석을 선택해주세요.",
+      rate_limited: "분석 요청이 많아요. 잠시 뒤 다시 시도해주세요.",
+    };
+    throw new NoteOperationError(messages[String(claim)] ?? "기록을 찾을 수 없어요.", claim === "rate_limited" ? 429 : 409);
+  }
+  let result;
+  try {
+    const image = await downloadImageObject(note.analysis_image_path);
+    result = await analyzeWhiteboardImage({ buffer: image, mimeType: "image/jpeg" });
+  } catch {
+    await supabase.from("whiteboard_notes").update({ status: "failed", error_message: "분석에 실패했어요. 사진은 저장되어 있어요.", updated_at: new Date().toISOString() })
+      .eq("id", noteId).eq("owner_user_id", user.id).eq("analysis_attempt", attempt);
+    throw new NoteOperationError("분석에 실패했어요. 사진은 저장되어 있어요. 재분석은 별도 요청으로 진행됩니다.", 502);
+  }
+  const update = mapAnalysisToUpdate(result.analysis, { model: result.model });
+  const recovery = sealRecovery({ owner: user.id, note: noteId, attempt, expires: Date.now() + 7 * 86400_000, update } satisfies Recovery, secret);
+  return saveAnalysisResult(() => persist(attempt, update), recovery);
 }
 
 function mapAnalysisToUpdate(
@@ -260,20 +255,6 @@ function mapAnalysisToUpdate(
     error_message: null,
     updated_at: new Date().toISOString(),
   };
-}
-
-async function getAccessibleWorkspaceIds(userId: string) {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", userId);
-
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((row) => row.workspace_id as string);
 }
 
 function escapeIlikePattern(value: string) {

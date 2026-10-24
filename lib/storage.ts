@@ -5,12 +5,10 @@ export const WHITEBOARD_BUCKET = "whiteboard-images";
 export function buildImagePaths(input: {
   userId: string;
   noteId: string;
-  originalExtension: string;
 }) {
   const basePath = `${input.userId}/${input.noteId}`;
 
   return {
-    originalPath: `${basePath}/original.${input.originalExtension}`,
     analysisPath: `${basePath}/analysis.jpg`,
   };
 }
@@ -25,10 +23,10 @@ export async function uploadImageObject(input: {
     .from(WHITEBOARD_BUCKET)
     .upload(input.path, input.buffer, {
       contentType: input.contentType,
-      upsert: true,
+      upsert: false,
     });
 
-  if (error) {
+  if (error && String((error as { statusCode?: string }).statusCode) !== "409") {
     throw error;
   }
 }

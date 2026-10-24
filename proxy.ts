@@ -3,9 +3,19 @@ import { type NextRequest, NextResponse } from "next/server";
 import { isCodexLabEnabled } from "@/lib/codex-lab";
 
 export async function proxy(request: NextRequest) {
+  // Cookie-authenticated writes must originate from this site. APIs and pages
+  // containing private notes must never be served from a shared/browser cache.
+  const isWrite = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+  if (isWrite && request.nextUrl.pathname.startsWith("/api/") && !request.nextUrl.pathname.startsWith("/api/lab/")) {
+    const origin = request.headers.get("origin");
+    const expectedOrigin = `${request.nextUrl.protocol}//${request.headers.get("host") ?? request.nextUrl.host}`;
+    if (!origin || origin !== expectedOrigin) return new NextResponse("Forbidden", { status: 403 });
+  }
   let response = NextResponse.next({
     request,
   });
+
+  response.headers.set("Cache-Control", "private, no-store");
 
   if (["/lab/codex", "/api/lab/codex"].includes(request.nextUrl.pathname)) {
     if (!isCodexLabEnabled(request.headers.get("host"))) {
@@ -34,6 +44,7 @@ export async function proxy(request: NextRequest) {
         response = NextResponse.next({
           request,
         });
+        response.headers.set("Cache-Control", "private, no-store");
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );

@@ -1,73 +1,81 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { useRouter } from "next/navigation";
 import { Camera, ImageUp, LoaderCircle, X } from "lucide-react";
 
-export function CaptureUploader() {
+import { prepareCameraPhoto } from "@/lib/prepare-camera-photo";
+import { useSessionDraft, useUnloadWarning } from "@/hooks/useSessionDraft";
+
+type PhotoDraft = { file: File | null; noteId: string | null; uploaded: boolean; recovery: string | null };
+export function CaptureUploader({ userId }: { userId: string }) {
   const router = useRouter();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [draft, setDraft, clearDraft] = useSessionDraft<PhotoDraft>(`${userId}:capture`, { file: null, noteId: null, uploaded: false, recovery: null });
+  const { file } = draft;
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useUnloadWarning(Boolean(file));
   const previewUrl = useObjectUrl(file);
+  useEffect(() => { if (file) headingRef.current?.focus(); }, [file]);
   const submitting = useRef(false);
-  const [stage, setStage] = useState<"idle" | "uploading" | "analyzing">("idle");
+  const [stage, setStage] = useState<"idle" | "preparing" | "uploading" | "analyzing" | "saving">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
   async function submit() {
-    if (!file || submitting.current) {
-      return;
-    }
-
+    if (!file || !draft.noteId || submitting.current) return;
     submitting.current = true;
     setMessage(null);
-    setStage("uploading");
-
     try {
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const uploadResponse = await fetch("/api/notes", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadPayload = await uploadResponse.json();
-
-      if (!uploadResponse.ok) {
-        throw new Error(uploadPayload.error ?? "업로드에 실패했어요.");
+      if (!draft.uploaded) {
+        setStage("uploading");
+        const formData = new FormData();
+        formData.append("image", file);
+        formData.append("noteId", draft.noteId);
+        const upload = await fetch("/api/notes", { method: "POST", body: formData });
+        const payload = await upload.json();
+        if (!upload.ok) throw new Error(payload.error ?? "사진을 저장하지 못했어요.");
+        setDraft(current => ({ ...current, uploaded: true }));
       }
-
-      const noteId = uploadPayload.note.id as string;
-      setStage("analyzing");
-
-      const analyzeResponse = await fetch(`/api/notes/${noteId}/analyze`, {
-        method: "POST",
+      setStage(draft.recovery ? "saving" : "analyzing");
+      const response = await fetch(`/api/notes/${draft.noteId}/analyze`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft.recovery ? { recovery: draft.recovery } : {}),
       });
-
-      if (!analyzeResponse.ok) {
-        setMessage("분석이 실패했지만 사진은 저장됐어요. 상세 화면에서 다시 시도할 수 있어요.");
-      }
-
-      router.push(`/notes/${noteId}`);
+      const payload = await response.json();
+      if (payload.recovery) setDraft(current => ({ ...current, recovery: payload.recovery }));
+      if (!response.ok) throw new Error(payload.error ?? "처리하지 못했어요.");
+      clearDraft();
+      if (mounted.current) router.push(`/notes/${draft.noteId}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "처리 중 문제가 생겼어요.");
+      if (mounted.current) setMessage(error instanceof Error ? error.message : "연결이 끊겼어요. 사진을 유지하고 있으니 다시 시도해주세요.");
+    } finally {
       submitting.current = false;
-      setStage("idle");
+      if (mounted.current) setStage("idle");
     }
   }
 
-  function handleFile(nextFile: File | undefined) {
-    if (!nextFile) {
-      return;
-    }
-
-    setFile(nextFile);
+  async function handleFile(nextFile: File | undefined) {
+    if (!nextFile || submitting.current) return;
+    if (draft.recovery && !window.confirm("아직 저장되지 않은 분석 결과가 있어요. 새 사진을 선택할까요?")) return;
+    submitting.current = true;
+    setStage("preparing");
     setMessage(null);
+    try {
+      const prepared = await prepareCameraPhoto(nextFile);
+      setDraft({ file: prepared, noteId: crypto.randomUUID(), uploaded: false, recovery: null });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "사진을 준비하지 못했어요.");
+    } finally { submitting.current = false; setStage("idle"); }
   }
 
   function clearFile() {
-    setFile(null);
+    if (draft.recovery && !window.confirm("저장하지 못한 분석 결과가 사라져요. 선택을 지울까요?")) return;
+    setDraft({ file: null, noteId: null, uploaded: false, recovery: null });
+    clearDraft();
     setMessage(null);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (uploadInputRef.current) uploadInputRef.current.value = "";
@@ -76,8 +84,8 @@ export function CaptureUploader() {
   const busy = stage !== "idle";
 
   return (
-    <section className="panel capture-panel" id="capture">
-      {file ? <div className="section-heading compact"><h2>사진 확인</h2><p className="muted">글씨가 잘 보이는지 확인해 주세요.</p></div> : null}
+    <section className="panel capture-panel" id="capture" aria-busy={busy}>
+      {file ? <div className="section-heading compact"><h2 ref={headingRef} tabIndex={-1}>사진 확인</h2><p className="muted">글씨가 잘 보이는지 확인해 주세요.</p></div> : null}
 
       <input
         ref={cameraInputRef}
@@ -147,10 +155,13 @@ export function CaptureUploader() {
 
       {file ? <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
         {busy ? <LoaderCircle size={18} className="spinner" /> : null}
-        {stage === "uploading" ? "저장 중" : stage === "analyzing" ? "분석 중" : "내용 정리"}
+        {stage === "preparing" ? "사진 준비 중" : stage === "uploading" ? "사진 저장 중" : stage === "analyzing" ? "내용 정리 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "내용 정리"}
       </button> : null}
 
-      {message ? <p className="inline-message">{message}</p> : null}
+      {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 클라우드에 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}
+      <p className="session-caption">사진은 분석에 필요한 크기로 저장됩니다. 원본 파일은 별도로 보관하지 않아요.</p>
+      {draft.uploaded && draft.noteId ? <a className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</a> : null}
+      {message ? <p className="inline-message" role="status">{message}</p> : null}
     </section>
   );
 }

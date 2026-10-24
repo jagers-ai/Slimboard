@@ -28,6 +28,7 @@ export function BottomDock({ active }: BottomDockProps) {
         <Link
           className={`dock-item ${active === key ? "active" : ""}`}
           href={href}
+          aria-current={active === key ? "page" : undefined}
           key={key}
           onMouseEnter={() => router.prefetch(href)}
           onTouchStart={() => router.prefetch(href)}

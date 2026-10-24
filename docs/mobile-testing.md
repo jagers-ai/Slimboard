@@ -80,3 +80,33 @@ Verified on the Mac:
 Limitations: physical iPhone/Android capture was not repeated after this redesign. macOS Safari is not a physical iOS device. The saved-note Supabase screens were type/build checked, but their authenticated storage flow cannot be end-to-end tested without the separate Supabase configuration.
 
 Local evidence (ignored by Git): `.local-checks/redesign-list.jpg`, `redesign-photo.jpg`, `redesign-note.jpg`, `redesign-tests.log`, `redesign-build.log`.
+
+## 2026-10-24 — issues #6 / #7 implementation
+
+Target phones: Galaxy S25+ (Chrome / Samsung Internet), iPhone 18 Pro (Safari).
+The CSS sizes below are test viewports, not measured device specifications.
+
+Implemented shared in-flow bottom navigation, safe-area layout, wrapping controls,
+search label/focus/cancel target, 16px inputs, readable status colors, camera JPEG
+preparation, account-scoped in-memory photo/editor drafts, and save-only recovery.
+Photo pickers stay mounted when account verification temporarily hides the page.
+No photo or draft is written to browser persistent storage.
+
+Verified on local Chromium through Playwright, Node 24:
+- Real CaptureUploader, NoteEditor, SearchForm and NoteDocument in a temporary
+  local component harness: 320×740, 402×874, 412×915, 874×402, each at 16px and
+  32px root text (200%). All 32 combinations had no horizontal overflow; visible
+  buttons/links met 48px minimum height. Long unbroken editor titles included.
+- Editing → other screen → editing preserved the draft. Two synchronous save
+  clicks made one PATCH. A mocked save failure retained the input.
+- Photo selection → editing → photo preserved the prepared photo. Two synchronous
+  submit clicks made one upload and one analysis submission. A mocked result-save
+  failure offered save-only retry with its receipt, without another upload.
+- Browser mocks used synthetic photos and were removed. The temporary harness
+  route was removed and is absent from the production build.
+- Lab HTTP smoke: all 8 checks passed; no paid analysis was dispatched.
+
+Actual Supabase verification is described in cloud-storage.md. Google OAuth
+completion, phone camera/HEIC behavior, real soft keyboards/address bars,
+VoiceOver/TalkBack and device font/display settings remain unverified. No physical
+Galaxy S25+ or iPhone 18 Pro was connected to this Mac for this change.

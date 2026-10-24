@@ -11,7 +11,9 @@ export type WhiteboardNote = {
   visual_context: string;
   detected_languages: string[];
   warnings: string[];
-  original_image_path: string;
+  original_image_path: string | null;
+  image_ready: boolean;
+  analysis_attempt: string | null;
   analysis_image_path: string;
   status: NoteStatus;
   error_message: string | null;

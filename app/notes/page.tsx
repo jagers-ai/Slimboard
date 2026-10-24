@@ -1,3 +1,4 @@
+import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "next/link";
 import { Search } from "lucide-react";
 
@@ -32,7 +33,7 @@ export default async function NotesPage() {
   });
 
   return (
-    <main className="app-shell">
+    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell">
       <header className="topbar">
         <Link className="brand" href="/">슬림보드</Link>
         <Link className="text-button icon-button" href="/search" aria-label="기록 검색"><Search size={22} /></Link>
@@ -47,6 +48,6 @@ export default async function NotesPage() {
       </section>
 
       <BottomDock active="notes" />
-    </main>
+    </main></AccountBoundary>
   );
 }

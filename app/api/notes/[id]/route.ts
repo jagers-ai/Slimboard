@@ -38,6 +38,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  try {
   const { id } = await params;
   const body = (await request.json()) as {
     title?: string;
@@ -45,6 +46,7 @@ export async function PATCH(request: Request, { params }: Params) {
     summary?: string;
   };
 
+  if (![body.title, body.rawText, body.summary].every(value => value === undefined || (typeof value === "string" && value.length <= 100_000))) return NextResponse.json({ error: "입력 내용을 확인해주세요." }, { status: 400 });
   const note = await updateNoteForUser({
     noteId: id,
     userId: user.id,
@@ -58,6 +60,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   return NextResponse.json({ note });
+  } catch { return NextResponse.json({ error: "저장하지 못했어요. 분석 중인지 확인하고 다시 시도해주세요." }, { status: 409 }); }
 }
 
 export async function DELETE(request: Request, { params }: Params) {
@@ -68,7 +71,9 @@ export async function DELETE(request: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const deleted = await deleteNoteForUser(id, user.id);
+  let deleted;
+  try { deleted = await deleteNoteForUser(id, user.id); }
+  catch { return NextResponse.json({ error: "삭제하지 못했어요. 잠시 뒤 다시 시도해주세요." }, { status: 503 }); }
 
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

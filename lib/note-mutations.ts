@@ -8,7 +8,7 @@ export async function getOwnedNote<T extends { owner_user_id: string }>(
   return note?.owner_user_id === userId ? note : null;
 }
 
-type DeletableNote = { owner_user_id: string; original_image_path: string; analysis_image_path: string };
+type DeletableNote = { owner_user_id: string; original_image_path: string | null; analysis_image_path: string };
 type DeleteDependencies = {
   load: (noteId: string, userId: string) => Promise<DeletableNote | null>;
   deleteRow: (noteId: string, userId: string) => Promise<boolean>;
@@ -23,7 +23,7 @@ export async function deleteOwnedNote(noteId: string, userId: string, dependenci
   // leave a still-visible record with permanently deleted photographs.
   if (!await dependencies.deleteRow(noteId, userId)) return false;
   try {
-    await dependencies.removeImages([...new Set([note.original_image_path, note.analysis_image_path].filter(Boolean))]);
+    await dependencies.removeImages([...new Set([note.original_image_path, note.analysis_image_path].filter((path): path is string => Boolean(path)))]);
   } catch {
     // The note is already deleted; do not report a retryable note deletion.
     // Storage cleanup needs separate operational follow-up, without logging paths.

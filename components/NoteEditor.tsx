@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, RefreshCw, Save, Trash2 } from "lucide-react";
 
@@ -11,17 +11,28 @@ type NoteEditorNote = Pick<
   "id" | "title" | "raw_text" | "summary" | "keywords" | "error_message"
 >;
 
-export function NoteEditor({ note }: { note: NoteEditorNote }) {
+import { useSessionDraft, useUnloadWarning } from "@/hooks/useSessionDraft";
+export function NoteEditor({ note, userId }: { note: NoteEditorNote; userId: string }) {
   const router = useRouter();
-  const [title, setTitle] = useState(note.title);
-  const [rawText, setRawText] = useState(note.raw_text);
-  const [summary, setSummary] = useState(note.summary);
+  const [draft, setDraft, clearDraft] = useSessionDraft(`${userId}:note:${note.id}`, { title: note.title, rawText: note.raw_text, summary: note.summary, recovery: null as string | null });
+  const { title, rawText, summary, recovery } = draft;
+  const setTitle = (title: string) => setDraft(current => ({ ...current, title }));
+  const setRawText = (rawText: string) => setDraft(current => ({ ...current, rawText }));
+  const setSummary = (summary: string) => setDraft(current => ({ ...current, summary }));
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [saved, setSaved] = useState({ title: note.title, rawText: note.raw_text, summary: note.summary });
+  const dirty = title !== saved.title || rawText !== saved.rawText || summary !== saved.summary;
+  useUnloadWarning(dirty || Boolean(recovery));
   const [message, setMessage] = useState<string | null>(note.error_message);
   const [isSaving, setIsSaving] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   async function save() {
+    if (pending.current) return;
+    pending.current = true;
     setIsSaving(true);
     setMessage(null);
 
@@ -37,46 +48,57 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
         throw new Error(payload.error ?? "저장에 실패했어요.");
       }
 
-      setMessage("저장됐어요.");
-      router.refresh();
+      clearDraft();
+      setSaved({ title, rawText, summary });
+      setMessage("클라우드에 저장됐어요.");
+      if (mounted.current) router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 중 문제가 생겼어요.");
     } finally {
+      pending.current = false;
       setIsSaving(false);
     }
   }
 
   async function analyze() {
+    if (pending.current) return;
+    if (!recovery && !window.confirm("사진을 다시 분석할까요? 현재 수정 내용이 새 분석 결과로 바뀝니다.")) return;
+    pending.current = true;
     setIsAnalyzing(true);
-    setMessage("다시 분석하고 있습니다.");
+    setMessage(recovery ? "정리된 노트를 저장하고 있어요." : "다시 분석하고 있어요.");
 
     try {
       const response = await fetch(`/api/notes/${note.id}/analyze`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(recovery ? { recovery } : { force: true }),
       });
       const payload = await response.json();
 
+      if (payload.recovery) setDraft(current => ({ ...current, recovery: payload.recovery }));
       if (!response.ok) {
         throw new Error(payload.error ?? "분석에 실패했어요.");
       }
 
-      setTitle(payload.note.title);
-      setRawText(payload.note.raw_text);
-      setSummary(payload.note.summary);
-      setMessage("재분석이 완료됐어요.");
-      router.refresh();
+      setDraft({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary, recovery: null });
+      clearDraft();
+      setSaved({ title: payload.note.title, rawText: payload.note.raw_text, summary: payload.note.summary });
+      setMessage("노트가 클라우드에 저장됐어요.");
+      if (mounted.current) router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "분석 중 문제가 생겼어요.");
     } finally {
+      pending.current = false;
       setIsAnalyzing(false);
     }
   }
 
   async function remove() {
-    if (!window.confirm("이 노트와 원본 사진을 삭제할까요?")) {
+    if (pending.current || !window.confirm("이 노트와 저장된 사진을 삭제할까요?")) {
       return;
     }
 
+    pending.current = true;
     setIsDeleting(true);
     setMessage(null);
 
@@ -90,9 +112,11 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
         throw new Error(payload.error ?? "삭제에 실패했어요.");
       }
 
-      router.push("/notes");
+      clearDraft();
+      if (mounted.current) router.push("/notes");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "삭제 중 문제가 생겼어요.");
+      pending.current = false;
       setIsDeleting(false);
     }
   }
@@ -100,7 +124,7 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
   const busy = isSaving || isAnalyzing || isDeleting;
 
   return (
-    <section className="detail-panel editor-panel">
+    <section className="detail-panel editor-panel" aria-busy={busy}>
       <div className="section-heading compact">
         <span className="eyebrow">정리된 노트</span>
         <h2>원문과 요약</h2>
@@ -111,7 +135,7 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
           <label htmlFor="title">제목</label>
           <input
             id="title"
-            className="input"
+            className="input" disabled={busy || Boolean(recovery)}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
@@ -120,7 +144,7 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
           <label htmlFor="rawText">원문</label>
           <textarea
             id="rawText"
-            className="textarea"
+            className="textarea" disabled={busy || Boolean(recovery)}
             value={rawText}
             onChange={(event) => setRawText(event.target.value)}
           />
@@ -129,7 +153,7 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
           <label htmlFor="summary">요약</label>
           <textarea
             id="summary"
-            className="textarea"
+            className="textarea" disabled={busy || Boolean(recovery)}
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
           />
@@ -146,13 +170,13 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
         ) : null}
 
         <div className="split-actions stacked">
-          <button className="button primary" type="button" onClick={save} disabled={busy}>
+          <button className="button primary" type="button" onClick={save} disabled={busy || Boolean(recovery)}>
             {isSaving ? <LoaderCircle size={18} /> : <Save size={18} />}
             저장
           </button>
           <button className="button" type="button" onClick={analyze} disabled={busy}>
             {isAnalyzing ? <LoaderCircle size={18} /> : <RefreshCw size={18} />}
-            재분석
+            {recovery ? "노트 저장 다시 시도" : "재분석"}
           </button>
           <button className="button danger" type="button" onClick={remove} disabled={busy}>
             <Trash2 size={18} />
@@ -160,7 +184,7 @@ export function NoteEditor({ note }: { note: NoteEditorNote }) {
           </button>
         </div>
 
-        {message ? <p className="inline-message">{message}</p> : null}
+        {message ? <p className="inline-message" role="status">{message}</p> : null}
       </div>
     </section>
   );

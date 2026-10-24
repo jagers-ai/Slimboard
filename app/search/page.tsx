@@ -1,3 +1,4 @@
+import { AccountBoundary } from "@/components/AccountBoundary";
 import { BottomDock } from "@/components/BottomDock";
 import { RecentSearches } from "@/components/RecentSearches";
 import { SearchForm } from "@/components/SearchForm";
@@ -42,12 +43,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const recentSearches = q ? [] : await listRecentSearchesForUser(user.id);
 
   return (
-    <main className="app-shell search-shell">
+    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell search-shell">
       <SearchForm initialQuery={q} />
 
       {q ? <SearchResults notes={notes} query={q} /> : <RecentSearches recentSearches={recentSearches} />}
 
       <BottomDock active="search" />
-    </main>
+    </main></AccountBoundary>
   );
 }

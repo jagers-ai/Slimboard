@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import sharp from "sharp";
 
 const ACCEPTED_TYPES = new Set([
@@ -14,11 +12,6 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const ANALYSIS_MAX_EDGE = 2560;
 
 export type PreparedImage = {
-  original: {
-    buffer: Buffer;
-    contentType: string;
-    extension: string;
-  };
   analysis: {
     buffer: Buffer;
     contentType: "image/jpeg";
@@ -36,8 +29,7 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
   }
 
   const originalBuffer = Buffer.from(await file.arrayBuffer());
-  const extension = getExtension(file);
-  const analysisBuffer = await sharp(originalBuffer, { failOn: "none" })
+  const analysisBuffer = await sharp(originalBuffer, { failOn: "error", limitInputPixels: 80_000_000 })
     .rotate()
     .resize({
       width: ANALYSIS_MAX_EDGE,
@@ -52,36 +44,10 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
     .toBuffer();
 
   return {
-    original: {
-      buffer: originalBuffer,
-      contentType: file.type,
-      extension,
-    },
     analysis: {
       buffer: analysisBuffer,
       contentType: "image/jpeg",
       extension: "jpg",
     },
   };
-}
-
-function getExtension(file: File) {
-  const fromName = path.extname(file.name).replace(".", "").toLowerCase();
-
-  if (fromName && /^[a-z0-9]+$/.test(fromName)) {
-    return fromName === "jpeg" ? "jpg" : fromName;
-  }
-
-  switch (file.type) {
-    case "image/png":
-      return "png";
-    case "image/webp":
-      return "webp";
-    case "image/heic":
-      return "heic";
-    case "image/heif":
-      return "heif";
-    default:
-      return "jpg";
-  }
 }

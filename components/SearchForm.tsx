@@ -38,7 +38,9 @@ export function SearchForm({ initialQuery = "" }: SearchFormProps) {
       <div className="search-input-wrap">
         <Search aria-hidden="true" size={25} />
         <input
-          autoFocus
+          aria-label="기록 검색"
+          type="search"
+          enterKeyHint="search"
           className="search-page-input"
           placeholder="전체 검색"
           value={query}
@@ -55,7 +57,7 @@ export function SearchForm({ initialQuery = "" }: SearchFormProps) {
           </button>
         ) : null}
       </div>
-      <Link className="search-cancel" href="/search">
+      <Link className="search-cancel" href="/">
         취소
       </Link>
     </form>

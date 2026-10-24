@@ -22,6 +22,7 @@ export async function getCurrentUser(request?: Request): Promise<AppUser | null>
     return localDevUser;
   }
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return null;
   const supabase = await createClient();
   const {
     data: { user },
@@ -70,7 +71,7 @@ function getRequestHost(request: Request) {
 }
 
 function isLocalDevAuthHost(host: string | null | undefined) {
-  if (!host || process.env.VERCEL || process.env.VERCEL_URL) {
+  if (process.env.NODE_ENV !== "development" || process.env.SLIMBOARD_LOCAL_DEV_AUTH !== "1" || !host || process.env.VERCEL || process.env.VERCEL_URL) {
     return false;
   }
 

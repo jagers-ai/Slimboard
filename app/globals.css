@@ -946,3 +946,44 @@ a:focus-visible {
   html { scroll-behavior: auto; }
   .spinner, .skeleton-block::after { animation: none; }
 }
+
+/* Shared mobile layout: navigation stays in document flow at every text size. */
+.app-shell { display: flex; flex-direction: column; padding-bottom: max(16px, var(--safe-bottom)); }
+.app-shell > * { min-width: 0; }
+.bottom-dock {
+  position: static; transform: none; width: 100%;
+  margin-top: auto; padding: 12px 0 max(8px, var(--safe-bottom));
+  flex-shrink: 0;
+}
+.app-shell > .bottom-dock { margin-top: 32px; }
+.app-shell > .dashboard, .app-shell > .section-stack, .app-shell > .notebook-document { flex: 1; }
+.topbar, .status-row, .recent-searches-head { flex-wrap: wrap; }
+.brand, .chip, .status-badge, .recent-search-row, .search-result-title { overflow-wrap: anywhere; white-space: normal; }
+.topbar .brand { min-height: 48px; min-width: 0; }
+.search-input-wrap { min-width: 0; gap: 6px; padding: 0 8px; }
+.search-input-wrap > svg { flex-shrink: 0; }
+.search-input-wrap:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.search-cancel { display: inline-flex; min-width: 48px; min-height: 48px; align-items: center; justify-content: center; }
+.search-page-form { gap: 8px; margin-bottom: 32px; }
+.search-page-input { min-height: 54px; font-size: 1rem; }
+.search-clear-button { color: var(--ink); background: var(--blue-soft); }
+.input:focus, .textarea:focus { outline: 2px solid var(--blue); outline-offset: 2px; box-shadow: none; }
+.input, .textarea { border: 1px solid var(--line); scroll-margin-block: 24px; }
+.recent-search-row a { min-height: 48px; display: flex; align-items: center; }
+.recent-searches-head button, .recent-search-row button { color: var(--muted); }
+.feature-row div, .policy-row div, .search-result-title strong { min-width: 0; }
+.search-result-card, .feature-row { overflow-wrap: anywhere; }
+.search-result-title span { background: var(--blue); }
+.status-badge.processing { color: #805300; }
+.status-badge.failed, .button.danger { color: #a92531; }
+.status-badge.completed { color: var(--blue); }
+.dock-item { color: var(--muted); padding: 8px 4px; }
+@media (max-width: 360px) {
+  .search-page-form { grid-template-columns: minmax(0, 1fr); }
+  .search-cancel { justify-self: end; }
+  .hero-card, .setup-panel { padding-inline: 0; }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  .app-shell { max-width: 600px; }
+  .topbar { margin-bottom: 12px; }
+}

@@ -24,10 +24,10 @@ export function NoteDocument({ analysis, createdAt, photoUrl, includeTime, headi
         <details className="original-photo">
           <summary>
             <img src={photoUrl} alt="" />
-            <span>원본 사진 보기</span>
+            <span>사진 보기</span>
             <ChevronDown size={20} aria-hidden="true" />
           </summary>
-          <img className="expanded-photo" src={photoUrl} alt="노트의 원본 사진" loading="lazy" />
+          <img className="expanded-photo" src={photoUrl} alt="노트에 저장된 사진" loading="lazy" />
         </details>
       ) : null}
       <section className="document-section">

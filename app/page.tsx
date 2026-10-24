@@ -1,3 +1,4 @@
+import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "next/link";
 import { BookOpen, Search, Sparkles } from "lucide-react";
 
@@ -28,7 +29,7 @@ export default async function Home() {
   const notes = await listNotesForUser({ userId: user.id });
 
   return (
-    <main className="app-shell">
+    <AccountBoundary key={user.id} userId={user.id}><main className="app-shell">
       <header className="topbar">
         <Link className="brand" href="/">
           슬림보드
@@ -40,11 +41,11 @@ export default async function Home() {
         <div className="section-heading"><h1 className="page-title">기록</h1></div>
         <Link className="notebook-search" href="/search"><Search size={20} />기록 검색</Link>
         <NoteList notes={notes} emptyText="첫 사진을 노트로 남겨보세요." />
-        <CaptureUploader />
+        <CaptureUploader key={user.id} userId={user.id} />
       </section>
 
       <BottomDock active="home" />
-    </main>
+    </main></AccountBoundary>
   );
 }
 

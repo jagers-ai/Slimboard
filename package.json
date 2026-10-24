@@ -13,7 +13,7 @@
     "lab:share": "node scripts/codex-share.mjs",
     "lab:phone": "node scripts/phone-preview.mjs",
     "lab:smoke": "node scripts/lab-smoke.mjs",
-    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs scripts/camera-session.test.mjs scripts/note-mutations.test.mjs"
+    "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs scripts/camera-session.test.mjs scripts/note-mutations.test.mjs scripts/cloud-storage.test.mjs"
   },
   "engines": {
     "node": ">=24 <25"

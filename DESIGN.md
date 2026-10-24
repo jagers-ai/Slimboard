@@ -37,7 +37,7 @@ including the camera lab and the signed-in application. Read it before UI work;
 
 - Records: search, actual records, primary photo capture, secondary album selection. Never seed fake records.
 - Review: large uncropped photo, clear reselect/back controls, one primary `내용 정리` action.
-- Result: title and summary first; original image, full transcription, and keywords are disclosures.
+- Result: title and summary first; saved analysis image, full transcription, and keywords are disclosures.
 - Saved notes expose editing through `노트 수정`; existing save, reanalysis, and deletion behavior remains available.
 - The standalone lab keeps records only in React memory for the current tab. State this plainly. Do not imply permanent storage or add sensitive photos to browser storage.
 - Keep selected photos on failure or when returning to the list. Warn about accidental page unload when there is session content.
@@ -55,3 +55,9 @@ including the camera lab and the signed-in application. Read it before UI work;
 ## Verification boundary
 
 Responsive browser checks do not establish physical phone behavior. Record the exact browser, viewport sizes, and tested flow in `docs/mobile-testing.md`. Report device capture separately.
+
+## Saved records and mobile navigation
+
+- Saved records use one analysis JPEG for preview and detail; label the disclosure `사진 보기`. Never promise original resolution or automatic photo-library saving.
+- Keep the shared bottom navigation in normal document flow. It must not cover editing controls with a keyboard or 200% text.
+- Photo and editor drafts are account-scoped memory only, retained through in-app navigation and cleared on sign-out. Failed result saves offer `노트 저장 다시 시도`, which must not start another AI request.
