@@ -286,6 +286,7 @@ h1:focus, h2:focus { outline: none; }
 .recent-searches-head button { font-size: .875rem; }
 .recent-search-list { gap: 0; }
 .recent-search-row { font-size: 1rem; border-bottom: 1px solid #eeeff1; }
+.recent-search-row a { flex: 1; min-width: 0; }
 .search-empty { min-height: 50vh; gap: 8px; }
 .search-empty strong { font-size: 1.125rem; }
 .search-empty p { font-size: .9375rem; color: var(--muted); word-break: keep-all; }

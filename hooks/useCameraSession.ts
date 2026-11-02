@@ -11,30 +11,31 @@ export function useCameraSession() {
   const statusRequest = useRef<AbortController | null>(null);
   const activeOperation = useRef<AbortController | null>(null);
 
-  const refreshAvailability = useCallback(async () => {
+  const checkAvailability = useCallback(() => {
     statusRequest.current?.abort();
     const controller = new AbortController();
     statusRequest.current = controller;
-    setAvailability("checking");
-    try {
-      const ready = await checkCameraReady(controller.signal);
+    return checkCameraReady(controller.signal).catch(() => false).then((ready) => {
       if (!controller.signal.aborted) setAvailability(ready ? "ready" : "unavailable");
-    } catch {
-      if (!controller.signal.aborted) setAvailability("unavailable");
-    }
+    });
   }, []);
+
+  const refreshAvailability = useCallback(() => {
+    setAvailability("checking");
+    return checkAvailability();
+  }, [checkAvailability]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.hash.slice(1)).has("invite")) {
       window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
     }
-    void refreshAvailability();
+    void checkAvailability();
     return () => {
       statusRequest.current?.abort();
       // Stop client work on unmount. This is not a guarantee of cancelling API billing.
       activeOperation.current?.abort();
     };
-  }, [refreshAvailability]);
+  }, [checkAvailability]);
 
   const hasContent = Boolean(state.draft || state.notes.length);
   useEffect(() => {
