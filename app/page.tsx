@@ -1,13 +1,14 @@
 import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "@/components/AppLink";
-import { BookOpen, Search, Sparkles } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { AppFrame } from "@/components/AppFrame";
-import { CaptureUploader } from "@/components/CaptureUploader";
+import { NewNoteButton, PendingPhotoNotice } from "@/components/NewNoteButton";
+import { NoteList } from "@/components/NoteList";
 import { SignInButton } from "@/components/SignInButton";
-import { SignOutButton } from "@/components/SignOutButton";
 import { hasCoreEnv } from "@/lib/env";
 import { getCurrentUser } from "@/lib/auth";
+import { listNotesForUser } from "@/lib/notes";
 import { ensurePersonalWorkspace } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
@@ -24,76 +25,38 @@ export default async function Home() {
   }
 
   await ensurePersonalWorkspace(user);
+  const notes = await listNotesForUser({ userId: user.id });
 
   return (
-    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="home">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          슬림보드
-        </Link>
-        <SignOutButton email={user.email ?? ""} />
+    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="home" overlay={<NewNoteButton key={user.id} userId={user.id} />}>
+      <header className="home-header">
+        <h1 className="home-brand">슬림보드</h1>
+        <Link className="text-button icon-button" href="/search" aria-label="노트 검색"><Search size={24} aria-hidden="true" /></Link>
       </header>
 
-      <section className="dashboard">
-        <CaptureUploader key={user.id} userId={user.id} />
-      </section>
-
+      <PendingPhotoNotice userId={user.id} />
+      <NoteList notes={notes} empty={<div className="feed-empty">
+        <strong>아직 노트가 없어요</strong>
+        <p>오른쪽 아래 새 노트 버튼으로 화이트보드를 찍어보세요.</p>
+      </div>} />
     </AppFrame></AccountBoundary>
   );
 }
 
 function Landing() {
   return (
-    <AppFrame active="home" className="landing-shell">
-      <header className="topbar">
-        <div className="brand">
-          슬림보드
-        </div>
-      </header>
-
-      <section className="hero">
-        <div className="hero-card">
-          <span className="eyebrow">화이트보드 노트</span>
-          <h1>Slimboard</h1>
-          <p>
-            지워지는 화이트보드를 사진으로 남기고, 필요한 내용을 정리합니다.
-          </p>
-          <div className="actions">
-            <SignInButton />
-          </div>
-        </div>
-
-        <div className="feature-list">
-          <div className="feature-row">
-            <span className="feature-icon">
-              <BookOpen size={20} />
-            </span>
-            <div>
-              <strong>촬영하면 저장</strong>
-              <span>회의 직후 모바일에서 바로 남길 수 있습니다.</span>
-            </div>
-          </div>
-          <div className="feature-row">
-            <span className="feature-icon">
-              <Sparkles size={20} />
-            </span>
-            <div>
-              <strong>내용 자동 정리</strong>
-              <span>사진 속 내용을 읽기 쉬운 노트로 정리합니다.</span>
-            </div>
-          </div>
-          <div className="feature-row">
-            <span className="feature-icon">
-              <Search size={20} />
-            </span>
-            <div>
-              <strong>나중에 검색</strong>
-              <span>저장한 화이트보드를 다시 찾기 쉽게 보관합니다.</span>
-            </div>
-          </div>
-        </div>
+    <AppFrame active="home" className="landing-shell" footer={<SignInButton />}>
+      <section className="landing">
+        <span className="landing-mark" aria-hidden="true">
+          <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+            <rect x="6" y="9" width="40" height="28" rx="3" fill="#ffffff" />
+            <path d="M13 18h16M13 25h24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            <path d="M20 37l-4 8M32 37l4 8" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+        </span>
+        <h1>화이트보드를 노트로</h1>
+        <p>사진만 찍으면 AI가 보기 좋은 노트로 정리해 드려요. 지난 회의 내용도 검색으로 바로 찾아요.</p>
       </section>
-
     </AppFrame>
   );
 }
@@ -107,7 +70,6 @@ function SetupScreen() {
           잠시 후 다시 시도해 주세요.
         </p>
       </section>
-
     </AppFrame>
   );
 }

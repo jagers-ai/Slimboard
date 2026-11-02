@@ -5,18 +5,20 @@ import { readNoteResponse } from "@/lib/note-api";
 import { useEffect, useRef, useState } from "react";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { useRouter } from "next/navigation";
-import { Camera, ImageUp, LoaderCircle, X } from "lucide-react";
+import { Camera, Images, LoaderCircle, X } from "lucide-react";
 
-import { prepareCameraPhoto } from "@/lib/prepare-camera-photo";
-import { useSessionDraft, useUnloadWarning } from "@/hooks/useSessionDraft";
+import Link from "@/components/AppLink";
+import { AppFrame } from "@/components/AppFrame";
+import { useCaptureDraft } from "@/hooks/useCaptureDraft";
+import { useUnloadWarning } from "@/hooks/useSessionDraft";
 
-type PhotoDraft = { file: File | null; noteId: string | null; uploaded: boolean; recovery: string | null };
+/** Photo review: large uncropped preview, retake/album, and one "AI로 변환" action. */
 export function CaptureUploader({ userId }: { userId: string }) {
   const router = useRouter();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [draft, setDraft, clearDraft] = useSessionDraft<PhotoDraft>(`${userId}:capture`, { file: null, noteId: null, uploaded: false, recovery: null });
+  const { draft, setDraft, clearDraft, choose, preparing, error } = useCaptureDraft(userId);
   const { file } = draft;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -28,7 +30,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
     headingRef.current?.closest(".app-scroll")?.scrollTo({ top: 0 });
   }, [file]);
   const submitting = useRef(false);
-  const [stage, setStage] = useState<"idle" | "preparing" | "uploading" | "analyzing" | "saving">("idle");
+  const [stage, setStage] = useState<"idle" | "uploading" | "analyzing" | "saving">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
   async function submit() {
@@ -56,8 +58,8 @@ export function CaptureUploader({ userId }: { userId: string }) {
       if (!response.ok) throw new Error(payload.error ?? "노트를 만들지 못했어요.");
       clearDraft();
       if (mounted.current) router.push(`/notes/${draft.noteId}`);
-    } catch (error) {
-      if (mounted.current) setMessage(error instanceof Error ? error.message : "연결이 끊겼어요. 사진을 유지하고 있으니 다시 시도해주세요.");
+    } catch (cause) {
+      if (mounted.current) setMessage(cause instanceof Error ? cause.message : "연결이 끊겼어요. 사진은 그대로 있으니 다시 시도해 주세요.");
     } finally {
       submitting.current = false;
       if (mounted.current) setStage("idle");
@@ -65,112 +67,65 @@ export function CaptureUploader({ userId }: { userId: string }) {
   }
 
   async function handleFile(nextFile: File | undefined) {
-    if (!nextFile || submitting.current) return;
-    if (draft.recovery && !window.confirm("아직 저장하지 못한 노트가 있어요. 새 사진을 선택할까요?")) return;
-    submitting.current = true;
-    setStage("preparing");
+    if (submitting.current) return;
     setMessage(null);
-    try {
-      const prepared = await prepareCameraPhoto(nextFile);
-      setDraft({ file: prepared, noteId: crypto.randomUUID(), uploaded: false, recovery: null });
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "사진을 준비하지 못했어요.");
-    } finally { submitting.current = false; setStage("idle"); }
+    await choose(nextFile);
   }
 
-  function clearFile() {
-    if (draft.recovery && !window.confirm("아직 저장하지 못한 노트가 사라져요. 사진 선택을 취소할까요?")) return;
-    setDraft({ file: null, noteId: null, uploaded: false, recovery: null });
-    clearDraft();
-    setMessage(null);
-    if (cameraInputRef.current) cameraInputRef.current.value = "";
-    if (uploadInputRef.current) uploadInputRef.current.value = "";
+  function openPicker(input: HTMLInputElement | null) {
+    if (!input) return;
+    input.value = "";
+    input.click();
   }
 
-  const busy = stage !== "idle";
+  const busy = stage !== "idle" || preparing;
+  const notice = message ?? error;
+  const actionLabel = preparing ? "사진 준비 중" : stage === "uploading" ? "사진 올리는 중" : stage === "analyzing" ? "AI가 정리하는 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "AI로 변환";
+
+  const footer = file ? <button className="button primary full-width" type="button" onClick={submit} disabled={busy}>
+    {busy ? <LoaderCircle size={20} className="spinner" aria-hidden="true" /> : null}
+    {actionLabel}
+  </button> : undefined;
 
   return (
-    <section className={`panel capture-panel capture-home ${file ? "has-photo" : "is-empty"}`} id="capture" aria-busy={busy}>
-      <div className="section-heading compact">
-        <h1 className="page-title" ref={headingRef} tabIndex={-1}>{file ? "사진 확인" : "사진을 노트로"}</h1>
-        <p className="muted">{file ? "글씨가 잘 보이는지 확인해 주세요." : "촬영하거나 사진을 첨부해 주세요."}</p>
-      </div>
+    <AppFrame active="home" className="capture-shell" footer={footer}>
+      <header className="screen-header">
+        <Link className="text-button icon-button" href="/" aria-label="홈으로"><X size={24} aria-hidden="true" /></Link>
+        <h1 ref={headingRef} tabIndex={-1}>{file ? "사진 확인" : "새 노트 만들기"}</h1>
+        <span aria-hidden="true" />
+      </header>
 
-      <input
-        ref={cameraInputRef}
-        hidden
-        type="file"
-        accept="image/*"
-        capture="environment"
-        aria-label="화이트보드 촬영"
-        disabled={busy}
-        onChange={(event) => handleFile(event.target.files?.[0])}
-      />
-      <input
-        ref={uploadInputRef}
-        hidden
-        type="file"
-        accept="image/*"
-        aria-label="사진 첨부"
-        disabled={busy}
-        onChange={(event) => handleFile(event.target.files?.[0])}
-      />
+      <input ref={cameraInputRef} hidden type="file" accept="image/*" capture="environment" aria-label="화이트보드 촬영" disabled={busy}
+        onChange={(event) => void handleFile(event.target.files?.[0])} />
+      <input ref={uploadInputRef} hidden type="file" accept="image/*" aria-label="앨범에서 사진 고르기" disabled={busy}
+        onChange={(event) => void handleFile(event.target.files?.[0])} />
 
-      {file ? <div className="upload-preview">
-        {previewUrl ? (
-          <PhotoZoom alt="선택한 화이트보드" src={previewUrl} downloadUrl={previewUrl} className="capture-photo-zoom" />
-        ) : (
-          <div className="upload-empty">
-            <ImageUp size={28} />
-            <strong>사진을 선택해주세요</strong>
-            <span>화이트보드가 선명하게 보이는 사진이 좋아요.</span>
+      <section className={`capture-review ${file ? "has-photo" : "is-empty"}`} aria-busy={busy}>
+        {file ? <>
+          <div className="upload-preview">
+            {previewUrl ? <PhotoZoom alt="고른 화이트보드 사진" src={previewUrl} downloadUrl={previewUrl} className="capture-photo-zoom" /> : null}
           </div>
-        )}
-      </div> : <div className="capture-placeholder" aria-hidden="true"><Camera size={44} /><p>사진을 촬영하거나<br />첨부해 주세요.</p></div>}
+          <p className="capture-hint">글씨가 흐리면 다시 찍어주세요. 사진을 누르면 확대돼요.</p>
+        </> : <div className="capture-placeholder">
+          <Camera size={40} aria-hidden="true" />
+          <p>화이트보드 사진을 찍거나 앨범에서 골라주세요.<br />AI가 노트로 정리해 드려요.</p>
+        </div>}
 
-      {file && previewUrl ? <p className="photo-zoom-hint">사진을 누르면 크게 볼 수 있어요.</p> : null}
-      <div className="split-actions capture-actions">
-        <button
-          className={file ? "button" : "button primary"}
-          type="button"
-          onClick={() => {
-            if (!cameraInputRef.current) return;
-            cameraInputRef.current.value = "";
-            cameraInputRef.current.click();
-          }}
-          disabled={busy}
-        >
-          <Camera size={18} />
-          {file ? "다시 촬영" : "사진 촬영"}
-        </button>
-        <button
-          className="button"
-          type="button"
-          onClick={() => {
-            if (!uploadInputRef.current) return;
-            uploadInputRef.current.value = "";
-            uploadInputRef.current.click();
-          }}
-          disabled={busy}
-        >
-          <ImageUp size={18} />
-          사진 첨부
-        </button>
-        {file ? (
-          <button className="button icon-only" type="button" aria-label="선택한 사진 지우기" onClick={clearFile} disabled={busy}>
-            <X size={18} />
+        <div className="capture-actions">
+          <button className={file ? "button outline-quiet" : "button primary"} type="button" onClick={() => openPicker(cameraInputRef.current)} disabled={busy}>
+            <Camera size={20} aria-hidden="true" />
+            {file ? "다시 찍기" : "카메라로 찍기"}
           </button>
-        ) : null}
-      </div>
+          <button className="button outline-quiet" type="button" onClick={() => openPicker(uploadInputRef.current)} disabled={busy}>
+            <Images size={20} aria-hidden="true" />
+            앨범에서 고르기
+          </button>
+        </div>
 
-      {file ? <button className="button primary full-width" type="button" onClick={submit} disabled={!file || busy}>
-        {busy ? <LoaderCircle size={18} className="spinner" /> : null}
-        {stage === "preparing" ? "사진 준비 중" : stage === "uploading" ? "사진 저장 중" : stage === "analyzing" ? "변환 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "변환"}
-      </button> : null}
-
-      {busy ? <p role="status" className="session-caption">{stage === "preparing" ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 저장하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "사진 속 내용을 정리하고 있어요."}</p> : null}
-      {draft.uploaded && draft.noteId ? <a className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</a> : null}
-      {message ? <p className="inline-message" role="status">{message}</p> : null}
-    </section>
+        {busy ? <p role="status" className="session-caption">{preparing ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 올리고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "AI가 사진 속 내용을 정리하고 있어요."}</p> : null}
+        {draft.uploaded && draft.noteId ? <Link className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</Link> : null}
+        {notice ? <p className="inline-message" role="status">{notice}</p> : null}
+      </section>
+    </AppFrame>
   );
 }

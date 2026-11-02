@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { PhotoZoom } from "@/components/PhotoZoom";
-import { ChevronDown, Download } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { formatNoteDate } from "@/lib/note-date";
 import type { WhiteboardAnalysis } from "@/lib/types";
 
@@ -16,33 +16,29 @@ type NoteDocumentProps = {
   rawContent?: ReactNode;
   summaryContent?: ReactNode;
   downloadUrl?: string;
+  /** Round buttons laid over the top of the photo (back, download). */
+  heroActions?: ReactNode;
 };
 
 /** Shared reading view; safe for both server-rendered saved notes and the client lab. */
-export function NoteDocument({ analysis, createdAt, photoUrl, includeTime, headingRef, status, children, titleContent, rawContent, summaryContent, downloadUrl }: NoteDocumentProps) {
+export function NoteDocument({ analysis, createdAt, photoUrl, includeTime = true, headingRef, status, children, titleContent, rawContent, summaryContent, downloadUrl, heroActions }: NoteDocumentProps) {
   return (
     <article className="notebook-document" aria-labelledby="analysis-title">
-      <time className="session-caption" dateTime={createdAt}>{formatNoteDate(createdAt, includeTime)}</time>
-      <h1 id="analysis-title" ref={headingRef} tabIndex={-1}>{titleContent ?? analysis.title}</h1>
-      {status}
       {photoUrl ? (
-        <details className="original-photo" open>
-          <summary>
-            <img src={photoUrl} alt="" />
-            <span>사진 보기</span>
-            <ChevronDown size={20} aria-hidden="true" />
-          </summary>
-          <PhotoZoom className="note-photo-zoom" src={photoUrl} alt="노트에 저장된 사진" downloadUrl={downloadUrl} />
-          <p className="photo-zoom-hint">사진을 누르면 크게 볼 수 있어요.</p>
-          {downloadUrl ? <div className="photo-download-row"><a className="text-button" href={downloadUrl} download><Download size={18} />사진 다운로드</a></div> : null}
-        </details>
-      ) : null}
-      <details className="document-disclosure" open>
-        <summary>전체 원문<ChevronDown size={20} aria-hidden="true" /></summary>
+        <div className="note-hero">
+          <PhotoZoom className="note-hero-photo" src={photoUrl} alt="노트에 저장된 사진" downloadUrl={downloadUrl} />
+          {heroActions ? <div className="note-hero-actions">{heroActions}</div> : null}
+        </div>
+      ) : heroActions ? <div className="note-hero-actions is-plain">{heroActions}</div> : null}
+      <p className="note-meta"><time dateTime={createdAt}>{formatNoteDate(createdAt, includeTime)}</time> · AI 정리</p>
+      <h1 id="analysis-title" ref={headingRef} tabIndex={-1}>{titleContent ?? analysis.title}</h1>
+      {status ? <div className="note-status">{status}</div> : null}
+      <section className="document-section" aria-labelledby="board-content-title">
+        <h2 id="board-content-title" className="document-label">보드 내용</h2>
         {rawContent ?? <p>{analysis.rawText || "아직 읽은 내용이 없어요."}</p>}
-      </details>
+      </section>
       <details className="document-disclosure">
-        <summary>요약<ChevronDown size={20} aria-hidden="true" /></summary>
+        <summary>AI 요약<ChevronDown size={20} aria-hidden="true" /></summary>
         {summaryContent ?? <p>{analysis.summary || "아직 정리된 내용이 없어요."}</p>}
       </details>
       {children}

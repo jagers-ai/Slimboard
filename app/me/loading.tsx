@@ -1,5 +1,5 @@
 import { AppLoading } from "@/components/AppLoading";
 
 export default function Loading() {
-  return <AppLoading active="notes" variant="list" />;
+  return <AppLoading active="me" variant="list" />;
 }

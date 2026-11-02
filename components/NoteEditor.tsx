@@ -3,9 +3,10 @@ import { readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronLeft, Download, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
 
 import Link from "@/components/AppLink";
+import { AppFrame } from "@/components/AppFrame";
 import { DocumentField } from "@/components/DocumentField";
 import { NoteDocument } from "@/components/NoteDocument";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -122,7 +123,7 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
       }
 
       clearDraft();
-      if (mounted.current) router.push("/notes");
+      if (mounted.current) router.push("/");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "삭제 중 문제가 생겼어요.");
       pending.current = false;
@@ -132,29 +133,35 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
 
   const busy = isSaving || isAnalyzing || isDeleting;
 
-  return <div className="document-editor" aria-busy={busy}>
-    <header className="notebook-topbar">
-      <Link className="text-button icon-button" href="/notes" aria-label="기록 목록으로"><ArrowLeft size={22} /></Link>
-      <span>노트</span>
-      <button className="text-button document-save" type="button" onClick={save} disabled={busy || Boolean(recovery)}>
-        {isSaving ? <LoaderCircle size={18} className="spinner" /> : null}{isSaving ? "저장 중" : "저장"}
-      </button>
-    </header>
-    <NoteDocument createdAt={note.created_at} photoUrl={photoUrl}
-      downloadUrl={photoUrl ? `${photoUrl}?download=1` : undefined}
-      analysis={{ title, rawText, summary, keywords: note.keywords }}
-      titleContent={<DocumentField label="제목" title value={title} onChange={setTitle} disabled={busy || Boolean(recovery)} />}
-      rawContent={<DocumentField label="전체 원문" value={rawText} onChange={setRawText} disabled={busy || Boolean(recovery)} />}
-      summaryContent={<DocumentField label="요약" value={summary} onChange={setSummary} disabled={busy || Boolean(recovery)} />}
-      status={note.status !== "completed" ? <StatusBadge status={note.status} /> : null}>
-      <div className="document-tools">
-        <button className="text-button" type="button" onClick={analyze} disabled={busy}>
-          {isAnalyzing ? <LoaderCircle size={18} className="spinner" /> : <RefreshCw size={18} />}
-          {recovery ? "노트 저장 다시 시도" : isAnalyzing ? "변환 중" : "다시 변환"}
-        </button>
-        <button className="text-button" type="button" onClick={remove} disabled={busy}><Trash2 size={18} />{isDeleting ? "삭제 중" : "삭제"}</button>
-      </div>
-      {message ? <p className="document-message" role="status">{message}</p> : dirty ? <p className="document-message" role="status">수정한 내용을 저장해 주세요.</p> : null}
-    </NoteDocument>
+  const locked = busy || Boolean(recovery);
+  const downloadUrl = photoUrl ? `${photoUrl}?download=1` : undefined;
+  const footer = <div className="note-actions">
+    <button className="button outline-quiet" type="button" onClick={analyze} disabled={busy}>
+      {isAnalyzing ? <LoaderCircle size={18} className="spinner" aria-hidden="true" /> : <RefreshCw size={18} aria-hidden="true" />}
+      {recovery ? "노트 저장 다시 시도" : isAnalyzing ? "변환 중" : "다시 변환"}
+    </button>
+    <button className="button primary" type="button" onClick={save} disabled={locked}>
+      {isSaving ? <LoaderCircle size={20} className="spinner" aria-hidden="true" /> : null}{isSaving ? "저장 중" : "저장"}
+    </button>
   </div>;
+
+  return <AppFrame active="home" className="note-shell" footer={footer}>
+    <div className="document-editor" aria-busy={busy}>
+      <NoteDocument createdAt={note.created_at} photoUrl={photoUrl} downloadUrl={downloadUrl}
+        analysis={{ title, rawText, summary, keywords: note.keywords }}
+        heroActions={<>
+          <Link className="hero-button" href="/" aria-label="홈으로"><ChevronLeft size={24} aria-hidden="true" /></Link>
+          {downloadUrl ? <a className="hero-button" href={downloadUrl} download aria-label="사진 다운로드"><Download size={20} aria-hidden="true" /></a> : null}
+        </>}
+        titleContent={<DocumentField label="제목" title value={title} onChange={setTitle} disabled={locked} />}
+        rawContent={<DocumentField label="보드 내용" value={rawText} onChange={setRawText} disabled={locked} />}
+        summaryContent={<DocumentField label="AI 요약" value={summary} onChange={setSummary} disabled={locked} />}
+        status={note.status !== "completed" ? <StatusBadge status={note.status} /> : null}>
+        {message ? <p className="document-message" role="status">{message}</p> : dirty ? <p className="document-message" role="status">수정한 내용을 저장해 주세요.</p> : null}
+        <div className="document-tools">
+          <button className="text-button" type="button" onClick={remove} disabled={busy}><Trash2 size={18} aria-hidden="true" />{isDeleting ? "삭제 중" : "노트 삭제"}</button>
+        </div>
+      </NoteDocument>
+    </div>
+  </AppFrame>;
 }

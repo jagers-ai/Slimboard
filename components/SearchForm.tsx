@@ -3,7 +3,7 @@
 import Link from "@/components/AppLink";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { Search, X } from "lucide-react";
+import { ChevronLeft, Search, X } from "lucide-react";
 
 type SearchFormProps = {
   initialQuery?: string;
@@ -34,15 +34,16 @@ export function SearchForm({ initialQuery = "" }: SearchFormProps) {
   }
 
   return (
-    <form className="search-page-form" onSubmit={submit}>
+    <form className="search-page-form" role="search" onSubmit={submit}>
+      <Link className="text-button icon-button" href="/" aria-label="홈으로"><ChevronLeft size={24} aria-hidden="true" /></Link>
       <div className="search-input-wrap">
-        <Search aria-hidden="true" size={25} />
+        <Search aria-hidden="true" size={20} />
         <input
-          aria-label="기록 검색"
+          aria-label="노트 검색"
           type="search"
           enterKeyHint="search"
           className="search-page-input"
-          placeholder="전체 검색"
+          placeholder="노트 제목이나 보드 내용 검색"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -53,13 +54,10 @@ export function SearchForm({ initialQuery = "" }: SearchFormProps) {
             type="button"
             onClick={() => setQuery("")}
           >
-            <X size={17} />
+            <X size={18} aria-hidden="true" />
           </button>
         ) : null}
       </div>
-      <Link className="search-cancel" href="/">
-        취소
-      </Link>
     </form>
   );
 }

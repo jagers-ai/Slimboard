@@ -1,7 +1,4 @@
-import Link from "@/components/AppLink";
-import { Mic } from "lucide-react";
-import type { ReactNode } from "react";
-
+import { NoteList } from "@/components/NoteList";
 import type { NotePreview } from "@/lib/types";
 
 type SearchResultsProps = {
@@ -13,74 +10,16 @@ export function SearchResults({ notes, query }: SearchResultsProps) {
   if (notes.length === 0) {
     return (
       <div className="search-empty">
-        <strong>검색 결과가 없어요.</strong>
-        <p>다른 단어로 다시 검색해보세요.</p>
+        <strong>찾는 노트가 없어요</strong>
+        <p>다른 단어로 검색해 보세요.</p>
       </div>
     );
   }
 
   return (
-    <section className="search-results">
-      <h2>
-        검색 결과
-      </h2>
-      <div className="search-result-list">
-        {notes.map((note) => (
-          <Link className="search-result-card" href={`/notes/${note.id}`} key={note.id}>
-            <div className="search-result-title">
-              <span>
-                <Mic size={16} />
-              </span>
-              <strong>{highlightText(note.title, query)}</strong>
-            </div>
-            <p>{highlightText(getResultSnippet(note), query)}</p>
-            <div className="search-result-meta">{formatDate(note.created_at)}</div>
-          </Link>
-        ))}
-      </div>
+    <section className="search-results" aria-labelledby="search-results-title">
+      <h2 id="search-results-title" className="list-caption">노트 {notes.length}개</h2>
+      <NoteList notes={notes} query={query} />
     </section>
   );
-}
-
-function getResultSnippet(note: NotePreview) {
-  return note.summary || note.raw_text || (note.status === "processing" ? "내용을 정리하고 있어요." : note.status === "failed" ? "사진을 다시 변환해 주세요." : "내용이 없는 노트예요.");
-}
-
-function highlightText(text: string, query: string) {
-  const normalizedQuery = query.trim();
-
-  if (!normalizedQuery) {
-    return text;
-  }
-
-  const lowerText = text.toLocaleLowerCase("ko-KR");
-  const lowerQuery = normalizedQuery.toLocaleLowerCase("ko-KR");
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  let matchIndex = lowerText.indexOf(lowerQuery);
-  let key = 0;
-
-  while (matchIndex !== -1) {
-    if (matchIndex > cursor) {
-      parts.push(text.slice(cursor, matchIndex));
-    }
-
-    const end = matchIndex + normalizedQuery.length;
-    parts.push(<mark key={key++}>{text.slice(matchIndex, end)}</mark>);
-    cursor = end;
-    matchIndex = lowerText.indexOf(lowerQuery, cursor);
-  }
-
-  if (cursor < text.length) {
-    parts.push(text.slice(cursor));
-  }
-
-  return parts.length > 0 ? parts : text;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

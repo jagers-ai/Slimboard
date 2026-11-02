@@ -30,8 +30,8 @@ export function RecentSearches({ recentSearches }: RecentSearchesProps) {
   if (recentSearches.length === 0) {
     return (
       <div className="search-empty">
-        <strong>최근 검색 내역이 없어요.</strong>
-        <p>화이트보드에 포함된 단어, 노트 제목 등을 검색해보실 수 있어요.</p>
+        <strong>최근 검색한 단어가 없어요</strong>
+        <p>노트 제목이나 화이트보드에 적힌 단어로 찾아보세요.</p>
       </div>
     );
   }
@@ -39,7 +39,7 @@ export function RecentSearches({ recentSearches }: RecentSearchesProps) {
   return (
     <section className="recent-searches">
       <div className="recent-searches-head">
-        <h2>최근 검색어</h2>
+        <h2>최근 검색</h2>
         <button type="button" onClick={clearAll}>
           전체 삭제
         </button>
@@ -53,7 +53,7 @@ export function RecentSearches({ recentSearches }: RecentSearchesProps) {
               type="button"
               onClick={() => remove(item.query)}
             >
-              <X size={24} />
+              <X size={20} aria-hidden="true" />
             </button>
           </div>
         ))}

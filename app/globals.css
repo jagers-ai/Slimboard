@@ -1,15 +1,22 @@
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
-  --surface-soft: #f6f7f6;
-  --ink: #252a27;
-  --ink-strong: #18221d;
-  --muted: #68716c;
-  --muted-soft: #7a827d;
-  --line: #e4e8e5;
-  --blue: #205943;
-  --blue-dark: #205943;
-  --blue-soft: #f0f5f2;
+  --surface-soft: #f2f3f6;
+  --ink: #2b2e33;
+  --ink-strong: #1a1c20;
+  --muted: #6b7079;
+  --muted-soft: #6b7079;
+  --line: #eaebee;
+  /* Warm orange: --primary fills buttons (white 18px bold labels),
+     --primary-ink is the text/focus shade that passes 4.5:1 on white. */
+  --primary: #e9631a;
+  --primary-pressed: #d4560f;
+  --primary-ink: #b4460c;
+  --primary-soft: #fff1e7;
+  /* Legacy names kept for existing rules: they mean the primary color. */
+  --blue: var(--primary-ink);
+  --blue-dark: var(--primary);
+  --blue-soft: var(--primary-soft);
   --red: #ef4452;
   --red-soft: #ffecef;
   --amber: #f59f00;
@@ -22,7 +29,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  --page-gutter: 24px;
+  --page-gutter: 16px;
 }
 
 * {
@@ -44,8 +51,8 @@ body {
   min-height: 100svh;
   background: var(--bg);
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   letter-spacing: 0;
 }
 
@@ -292,14 +299,14 @@ a:focus-visible {
 .button {
   min-height: 54px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 12px 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--ink);
-  background: #eef1f4;
+  color: var(--ink-strong);
+  background: var(--surface-soft);
   font-weight: 600;
   min-width: 0;
   font-size: 1rem;
@@ -314,12 +321,14 @@ a:focus-visible {
 }
 
 .button.primary {
-  background: var(--blue-dark);
+  background: var(--primary);
   color: white;
+  font-size: 1.125rem;
+  font-weight: 700;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .button.primary:hover { background: #174531; }
+  .button.primary:hover { background: var(--primary-pressed); }
 }
 
 .button:active:not(:disabled) { filter: brightness(0.95); }

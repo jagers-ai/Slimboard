@@ -1,21 +1,12 @@
-import { AlertCircle, CheckCircle2, LoaderCircle } from "lucide-react";
-
 import type { NoteStatus } from "@/lib/types";
 
-export function StatusBadge({ status }: { status: NoteStatus }) {
-  const label =
-    status === "completed" ? "완료" : status === "failed" ? "실패" : "처리 중";
-  const Icon =
-    status === "completed"
-      ? CheckCircle2
-      : status === "failed"
-        ? AlertCircle
-        : LoaderCircle;
+const labels: Record<NoteStatus, string> = {
+  processing: "AI가 정리하는 중",
+  completed: "정리 완료",
+  failed: "변환 실패",
+};
 
-  return (
-    <span className={`status-badge ${status}`}>
-      <Icon size={15} />
-      {label}
-    </span>
-  );
+/** A small quiet tag; only unfinished notes show one in lists. */
+export function StatusBadge({ status }: { status: NoteStatus }) {
+  return <span className={`status-badge ${status}`}>{labels[status]}</span>;
 }

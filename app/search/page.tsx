@@ -36,13 +36,13 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         userId: user.id,
         query: q,
         limit: 50,
-        includeImageUrl: false,
       })
     : [];
   const recentSearches = q ? [] : await listRecentSearchesForUser(user.id);
 
   return (
     <AccountBoundary key={user.id} userId={user.id}><AppFrame active="search" className="search-shell">
+      <h1 className="sr-only">노트 검색</h1>
       <SearchForm initialQuery={q} />
 
       {q ? <SearchResults notes={notes} query={q} /> : <RecentSearches recentSearches={recentSearches} />}

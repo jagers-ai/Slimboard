@@ -1,7 +1,7 @@
-import { BottomDock } from "@/components/BottomDock";
+import { BottomDock, type DockTab } from "@/components/BottomDock";
 
 type AppLoadingProps = {
-  active: "home" | "search" | "notes";
+  active: DockTab;
   variant?: "home" | "list" | "detail" | "search";
 };
 

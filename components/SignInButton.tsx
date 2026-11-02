@@ -29,9 +29,9 @@ export function SignInButton() {
   }
 
   return (
-    <div><button className="button primary" onClick={signIn} disabled={isLoading}>
-      <LogIn size={18} />
-      {isLoading ? "연결 중" : "Google로 시작"}
-    </button>{message ? <p className="inline-message" role="alert">{message}</p> : null}</div>
+    <div className="sign-in">{message ? <p className="inline-message" role="alert">{message}</p> : null}<button className="button primary full-width" onClick={signIn} disabled={isLoading}>
+      <LogIn size={20} aria-hidden="true" />
+      {isLoading ? "연결 중" : "Google로 시작하기"}
+    </button></div>
   );
 }

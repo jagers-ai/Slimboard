@@ -1,6 +1,5 @@
 import { AccountBoundary } from "@/components/AccountBoundary";
 import { notFound } from "next/navigation";
-import { AppFrame } from "@/components/AppFrame";
 import { NoteEditor } from "@/components/NoteEditor";
 import { hasCoreEnv } from "@/lib/env";
 import { requireUser } from "@/lib/auth";
@@ -37,9 +36,8 @@ export default async function NotePage({ params }: NotePageProps) {
   };
 
   return (
-    <AccountBoundary key={user.id} userId={user.id}><AppFrame active="notes">
+    <AccountBoundary key={user.id} userId={user.id}>
       <NoteEditor key={note.id} note={editorNote} userId={user.id} photoUrl={note.image_url} />
-
-    </AppFrame></AccountBoundary>
+    </AccountBoundary>
   );
 }

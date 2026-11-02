@@ -2,11 +2,20 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { visibleViewportBounds } from "@/lib/visible-viewport";
-import { BottomDock } from "@/components/BottomDock";
+import { BottomDock, type DockTab } from "@/components/BottomDock";
 
-/** The content scrolls inside its own row; navigation never overlays it. */
-export function AppFrame({ children, active, className = "" }: {
-  children: ReactNode; active: "home" | "search" | "notes"; className?: string;
+/**
+ * The content scrolls inside its own row; the bottom row (tab bar or a
+ * screen's action bar) never overlays it. `overlay` floats above the bottom
+ * row (the home "새 노트" button) without scrolling with the content.
+ */
+export function AppFrame({ children, active, className = "", footer, overlay }: {
+  children: ReactNode;
+  active: DockTab;
+  className?: string;
+  /** Replaces the tab bar with a fixed action bar (photo review, note detail). */
+  footer?: ReactNode;
+  overlay?: ReactNode;
 }) {
   const frame = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -37,8 +46,10 @@ export function AppFrame({ children, active, className = "" }: {
     };
   }, []);
 
-  return <main ref={frame} className={`app-shell docked-shell ${className}`}>
+  const classes = ["app-shell", "docked-shell", overlay ? "has-overlay" : "", className].filter(Boolean).join(" ");
+  return <main ref={frame} className={classes}>
     <div className="app-scroll">{children}</div>
-    <BottomDock active={active} />
+    {overlay ? <div className="app-overlay">{overlay}</div> : null}
+    {footer ? <div className="action-bar">{footer}</div> : <BottomDock active={active} />}
   </main>;
 }
