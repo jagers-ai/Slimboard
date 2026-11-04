@@ -20,8 +20,6 @@ export function AppFrame({ children, active, className = "", footer, overlay }: 
   const frame = useRef<HTMLElement>(null);
   useEffect(() => {
     const viewport = window.visualViewport;
-    // Some Android browsers report no bottom inset for three-button navigation.
-    frame.current?.style.setProperty("--navigation-min-bottom", /Android/i.test(navigator.userAgent) ? "48px" : "0px");
     let request = 0;
     const resize = () => {
       if (!frame.current) return;

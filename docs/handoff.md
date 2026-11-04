@@ -16,17 +16,22 @@
 
 ## 가장 먼저 이어서 할 일: 하단 여백 문제
 
-**아직 해결되지 않았다. 현재 배포에는 Android 고정 48px 보정이 남아 있다.**
+**2026-11-04 `design/karrot-style`에서 Android 고정 48px 보정을 제거했다. 실제 기기 확인은 남아 있다.**
 
 1. 처음 사용자는 Android Chrome에서 홈·검색·노트 메뉴의 아래 글자가 휴대폰 3버튼 영역에 가려진 스크린샷을 제공했다.
 2. `--navigation-min-bottom: 48px` 보정을 적용했으나, 사용자가 다시 제공한 화면에서는 하단 메뉴가 과도하게 위로 떠 있었다.
 3. 사용자는 고정 숫자로 추정하는 보정을 거부하고, 표준 안전 영역 처리와 실제 기기 측정을 요청했다.
 4. 공식 문서 조사 및 Android/iPhone 원격 검사 방법 안내까지 완료했다. **48px 제거, 표준 방식으로의 교체, 실기기 측정 및 그에 따른 추가 배포는 아직 하지 않았다.**
+5. 2026-11-04 사용자가 목록형 홈 배포 화면(Android Chrome, 3버튼)에서 하단 메뉴가 떠 있는 스크린샷을 다시 제공하고 바닥에 붙여 달라고 요청했다.
+   `AppFrame`·`PhotoZoom`의 Android 판별과 `--navigation-min-bottom`을 지우고, 탭 바·사진 도구 아래 여백을
+   `max(8px, env(safe-area-inset-bottom))`만 쓰도록 바꿨다. Chrome 공식 문서상 웹 화면이 시스템 바 아래로
+   확장되는 경우는 제스처 막대뿐이며 이때 안전 영역 값이 보고된다. **이 변경의 배포와 실제 Android(3버튼·제스처)·iPhone 확인은 아직 하지 않았다.**
+   원래의 3버튼 가림이 다시 나타나면 위 실측 항목으로 원인을 확인하고, 고정 높이를 다시 넣지 않는다.
 
 관련 코드:
 
-- `components/AppFrame.tsx`: Android 식별 시 48px 설정, 표시 영역 높이·위치 계산.
-- `components/PhotoZoom.tsx`: 사진 모달에도 같은 48px 설정.
+- `components/AppFrame.tsx`: 표시 영역 높이·위치 계산. (Android 48px 설정은 2026-11-04 제거)
+- `components/PhotoZoom.tsx`: 사진 모달 표시 영역 계산. (48px 설정 제거)
 - `app/notebook.css`: 하단 메뉴/사진 도구의 padding, 미리보기 높이, 고정 프레임.
 - `lib/visible-viewport.ts`: 표시 높이와 레이아웃 높이의 작은 값 및 top 범위 제한.
 - `app/layout.tsx`: `viewportFit: cover`, `interactiveWidget: resizes-content`.

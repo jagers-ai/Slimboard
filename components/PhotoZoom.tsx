@@ -28,7 +28,6 @@ export function PhotoZoom({ src, alt, className = "", downloadUrl }: {
     const modal = dialog.current!;
     modal.showModal();
     closeButton.current?.focus({ preventScroll: true });
-    modal.style.setProperty("--navigation-min-bottom", /Android/i.test(navigator.userAgent) ? "48px" : "0px");
     const viewport = window.visualViewport;
     const resizeViewport = () => {
       if (viewport && Math.abs(viewport.scale - 1) > .01) return;

@@ -156,11 +156,10 @@ h1:focus, h2:focus { outline: none; }
 
 .photo-download-row { justify-content: flex-end; }
 
-/* Keep controls above Android system buttons even when the browser reports 0. */
+/* The bottom row meets the system bar: only the reported safe-area inset is
+   added (iPhone home indicator, Android gesture bar), never a guessed height. */
 .app-shell.docked-shell { max-height: calc(100dvh - var(--app-viewport-top, 0px)); }
-.app-shell.docked-shell > .bottom-dock { padding-bottom: calc(8px + max(var(--safe-bottom), var(--navigation-min-bottom, 0px))); }
 .photo-viewer { max-height: calc(100dvh - var(--photo-viewport-top, 0px)); }
-.photo-viewer-footer { padding-bottom: calc(8px + max(var(--safe-bottom), var(--navigation-min-bottom, 0px))); }
 
 /* 2026-11 목록형 홈 · 주황 포인트 (DESIGN.md "Visual system") ------------- */
 .app-scroll { padding-top: var(--safe-top); }

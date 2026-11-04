@@ -301,3 +301,14 @@ No authentication, API, saved-note or signed-in records behavior changed.
   유지 근거로 쓰지 않는다.
 - 미검증: 실제 iPhone·Android, OS 글자 크기 설정, 모바일 키보드와 주소창, 안전 영역 값, 카메라 촬영,
   실제 Supabase 저장과 Google 로그인, `AI로 변환` 실행, 사진 다운로드, 다시 변환, 노트 삭제.
+
+## 하단 메뉴 바닥 붙임(Android 48px 보정 제거) — 2026-11-04
+
+- 계기: 사용자의 실제 Android Chrome(3버튼 탐색) 배포 화면 스크린샷에서 하단 탭 바 아래에 큰 빈 여백이 있어 메뉴가 떠 보였다.
+- 변경: Android 고정 48px(`--navigation-min-bottom`) 제거. 탭 바·사진 확대 도구 아래 여백은 `max(8px, env(safe-area-inset-bottom))`.
+- 방법: 로컬 `npm run dev` + 합성 백엔드·합성 세션, 앱 내장 브라우저(Chromium, Android 모바일 UA 모사)에서 iframe 크기별 측정.
+- 크기·상태: 320×568, 412×915, 812×375(가로) × 글자 100%/200% × 홈·검색·나의 슬림보드·노트 상세 = 24개 조합.
+- 결과: 24개 모두 하단 막대 아래 끝이 화면 아래 끝과 일치, 가로 넘침 없음. 탭 바 아래 여백 8px(이전 Android UA 56px), 노트 상세 동작 바 12px, 탭 최소 높이 58px(200%에서 73px), `새 노트` 버튼은 탭 바 위 16px.
+- `--safe-bottom: 34px`를 임의로 넣은 iPhone 유사 확인: 탭 바 여백이 34px로 늘고 바닥에 붙은 상태 유지. 실제 `env()` 값이 아니라 변수 대입 모사다.
+- 사진 확대 화면(375×812): 대화상자·하단 도구가 화면 아래 끝에 붙고 여백 8px, `--navigation-min-bottom` 없음.
+- 미검증: 실제 Android 3버튼·제스처 모드, 실제 iPhone Safari/홈 화면 앱의 홈 표시줄 위치, 주소창 접힘·키보드 상태. 원래의 3버튼 가림이 재발하지 않는지는 배포 후 실기기에서 확인해야 한다.
