@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { visibleViewportBounds } from "@/lib/visible-viewport";
 import { BottomDock, type DockTab } from "@/components/BottomDock";
 
@@ -18,7 +18,8 @@ export function AppFrame({ children, active, className = "", footer, overlay }: 
   overlay?: ReactNode;
 }) {
   const frame = useRef<HTMLElement>(null);
-  useEffect(() => {
+  // Measure before paint so a newly mounted screen never shows the tab bar off the bottom.
+  useLayoutEffect(() => {
     const viewport = window.visualViewport;
     let request = 0;
     const resize = () => {

@@ -1,13 +1,15 @@
-import { BottomDock, type DockTab } from "@/components/BottomDock";
+import { AppFrame } from "@/components/AppFrame";
+import type { DockTab } from "@/components/BottomDock";
 
 type AppLoadingProps = {
   active: DockTab;
   variant?: "home" | "list" | "detail" | "search";
 };
 
+/** Uses the same frame as the loaded screen so the tab bar never moves between them. */
 export function AppLoading({ active, variant = "list" }: AppLoadingProps) {
   return (
-    <main className={`app-shell loading-shell loading-${variant}`}>
+    <AppFrame active={active} className={`loading-shell loading-${variant}`}>
       {variant === "search" ? (
         <div className="loading-search-input skeleton-block" />
       ) : (
@@ -25,8 +27,6 @@ export function AppLoading({ active, variant = "list" }: AppLoadingProps) {
           <div className="loading-card skeleton-block" key={index} />
         ))}
       </section>
-
-      <BottomDock active={active} />
-    </main>
+    </AppFrame>
   );
 }
