@@ -41,6 +41,17 @@ test("uses the existing server key for one structured vision request and returns
   assert.equal(result.accounting.cost.usd, 0.00467);
 });
 
+test("preserves readable note text and normalizes bracketed OCR markers in place", async () => {
+  const result = await analyzeWithOpenAI(image, "image/jpeg", {
+    apiKey: "test",
+    fetch: async () => Response.json(responseBody({
+      ...analysis,
+      rawText: "담당: [읽기 어려움] / 일정: 금요일\n품목: ___ / 수량: [판독 불가]\n문구: 결과는 알 수 없음\n장소: [알 수 없음]",
+    })),
+  });
+  assert.equal(result.analysis.rawText, "담당: ___ / 일정: 금요일\n품목: ___ / 수량: ___\n문구: 결과는 알 수 없음\n장소: ___");
+});
+
 test("records exactly one metadata-only accounting entry, including failed parsing of a billed response", async () => {
   for (const bad of [false, true]) {
     const records = [];
