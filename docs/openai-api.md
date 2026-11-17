@@ -1,7 +1,7 @@
 # OpenAI API photo analysis
 
 Both saved notes and the camera lab use the OpenAI Responses API. The default is
-`gpt-6.1-sol` with `medium` reasoning. There is no OAuth or Codex CLI
+`gpt-6.1-terra` with `low` reasoning. There is no OAuth or Codex CLI
 login in the app's analysis path.
 
 New analyses use `___` in the transcription for each unreadable span. The
@@ -130,9 +130,10 @@ npm run lab:usage -- --json
 ```
 
 The request explicitly selects Standard (`service_tier: default`). Cost uses the
-response model and tier with the official rate card verified on 2026-10-24:
-Sol 6.1 Standard input $2, cached input $0.10, 30m cache write $2.50, 12h cache
-write $5, output $10 per million tokens. The prior Astra model is also recognized.
+response model and tier. Terra 6.1 Standard rates verified on 2026-11-18 are
+$1 input, $0.05 cached input, $1.25 for 30m cache writes, $2.50 for 12h cache
+writes, and $5 output per million tokens. The existing Sol and Astra rate cards
+are retained for those responses.
 Rate snapshots, long-context thresholds and service-tier multipliers are stored
 with each estimate. If a nonzero cache-write total lacks a lifetime breakdown,
 the recorder uses this request's unchanged API default TTL of 30m and labels

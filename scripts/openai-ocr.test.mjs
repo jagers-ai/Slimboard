@@ -5,7 +5,7 @@ const analyzeWithOpenAI = (image, mime, options = {}) => analyze(image, mime, { 
 
 const image = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const analysis = { title: "회의", rawText: "금요일 출시", summary: "금요일에 출시합니다.", keywords: ["출시"] };
-const responseBody = (value = analysis) => ({ status: "completed", id: "resp_test", model: "gpt-6.1-sol", service_tier: "default",
+const responseBody = (value = analysis) => ({ status: "completed", id: "resp_test", model: "gpt-6.1-terra", service_tier: "default",
 usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 200, cache_write_tokens: 100, cache_write_tokens_details: { ttl_30m_tokens: 100, ttl_12h_tokens: 0 } }, output_tokens: 300, output_tokens_details: { reasoning_tokens: 100 }, total_tokens: 1300 }, output: [
   { type: "reasoning", summary: [] },
   { type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] },
@@ -21,8 +21,8 @@ test("uses the existing server key for one structured vision request and returns
       assert.equal(init.headers.Authorization, "Bearer test-private-key");
       assert.equal(init.redirect, "manual");
       const body = JSON.parse(init.body);
-      assert.equal(body.model, "gpt-6.1-sol");
-      assert.equal(body.reasoning.effort, "medium");
+      assert.equal(body.model, "gpt-6.1-terra");
+      assert.equal(body.reasoning.effort, "low");
       assert.equal(body.service_tier, "default");
       assert.equal(body.store, false);
       assert.equal(body.text.format.strict, true);
@@ -38,7 +38,7 @@ test("uses the existing server key for one structured vision request and returns
   assert.equal(JSON.stringify(result).includes("test-private-key"), false);
   assert.equal(result.accounting.recorded, true);
   assert.equal(result.accounting.usage.reasoningTokens, 100);
-  assert.equal(result.accounting.cost.usd, 0.00467);
+  assert.equal(result.accounting.cost.usd, 0.002335);
 });
 
 test("preserves readable note text and normalizes bracketed OCR markers in place", async () => {
@@ -63,7 +63,7 @@ test("records exactly one metadata-only accounting entry, including failed parsi
     assert.equal(records.length, 1);
     assert.equal(records[0].status, bad ? "failed" : "completed");
     assert.equal(records[0].usage.totalTokens, 1300);
-    assert.equal(records[0].cost.usd, 0.00467);
+    assert.equal(records[0].cost.usd, 0.002335);
     assert.equal(records[0].responseId, "resp_test");
     assert.equal(records[0].requestId, "req_test");
     assert.equal(records[0].source, "camera-lab");

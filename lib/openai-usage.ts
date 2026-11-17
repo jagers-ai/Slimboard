@@ -40,11 +40,14 @@ export function readTokenUsage(value: unknown): TokenUsage | null {
 }
 
 export function estimateUsageCost(usage: TokenUsage | null, model: string | null, tier: string | null) {
-  const base = model && /^gpt-6\.1-sol(?:-\d{4}-\d{2}-\d{2})?$/.test(model)
+  const terra = model !== null && /^gpt-6\.1-terra(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
+  const base = terra
+    ? { input: 1, cached: 0.05, output: 5 }
+    : model && /^gpt-6\.1-sol(?:-\d{4}-\d{2}-\d{2})?$/.test(model)
     ? { input: 2, cached: 0.1, output: 10 }
     : model && /^gpt-6-astra(?:-\d{4}-\d{2}-\d{2})?$/.test(model)
       ? { input: 10, cached: 1, output: 50 } : null;
-  const factor = tier === "default" ? 1 : tier === "flex" ? 0.5 : tier === "priority" || tier === "fast" ? 2 : tier === "ultrafast" ? 6 : null;
+  const factor = tier === "default" ? 1 : tier === "flex" ? 0.5 : tier === "priority" || tier === "fast" ? 2 : tier === "ultrafast" && !terra ? 6 : null;
   if (!usage || !base || factor === null) return null;
   const longContext = usage.inputTokens > 272_000;
   const rates = {
@@ -62,7 +65,7 @@ export function estimateUsageCost(usage: TokenUsage | null, model: string | null
   const round = (n: number) => Math.round(n * 1e9) / 1e9;
   const usd = round(inputUsd + outputUsd);
   return {
-    kind: "usage-based-estimate" as const, pricingDate: PRICING_DATE, ratesPerMillionUsd: rates,
+    kind: "usage-based-estimate" as const, pricingDate: terra ? "2026-11-18" : PRICING_DATE, ratesPerMillionUsd: rates,
     inputUsd: round(inputUsd), outputUsd: round(outputUsd), usd,
     krwReference: Math.round(usd * USD_KRW_REFERENCE * 100) / 100,
     usdKrwReference: USD_KRW_REFERENCE, excludesTax: true,

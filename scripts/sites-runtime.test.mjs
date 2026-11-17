@@ -20,7 +20,9 @@ export default {async fetch(){
       // Constructing a real Worker Request catches unsupported request options.
       const request=new Request(url,options);
       if(request.redirect!=='manual') throw Error('Unexpected redirect policy');
-      return Response.json({status:'completed',model:'gpt-6.1-sol',service_tier:'default',
+      const sent=JSON.parse(options.body);
+      if(sent.model!=='gpt-6.1-terra'||sent.reasoning.effort!=='low') throw Error('Unexpected OCR model or effort');
+      return Response.json({status:'completed',model:'gpt-6.1-terra',service_tier:'default',
         usage:{input_tokens:20,output_tokens:10,total_tokens:30},
         output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({title:'test',rawText:'test',summary:'test',keywords:['test']})}]}]});
     }});

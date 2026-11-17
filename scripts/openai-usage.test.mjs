@@ -41,6 +41,15 @@ test("long-context rates apply at the documented boundary", () => {
   assert.equal(estimateUsageCost(usage(272001), "gpt-6.1-sol", "default").usd, 1.103004);
 });
 
+test("Terra prices Standard and Fast token usage but leaves unsupported Ultrafast unknown", () => {
+  const usage = readTokenUsage(raw);
+  const standard = estimateUsageCost(usage, "gpt-6.1-terra", "default");
+  assert.equal(standard.usd, 0.01995);
+  assert.equal(standard.pricingDate, "2026-11-18");
+  assert.equal(estimateUsageCost(usage, "gpt-6.1-terra", "fast").usd, 0.0399);
+  assert.equal(estimateUsageCost(usage, "gpt-6.1-terra", "ultrafast"), null);
+});
+
 test("missing usage stays unknown and inconsistent token counts are rejected", () => {
   for (const u of [undefined, null, {}, { ...raw, input_tokens: -1 }, { ...raw, output_tokens: 1.2 },
     { ...raw, total_tokens: 1 }, { ...raw, output_tokens_details: { reasoning_tokens: 2000 } },

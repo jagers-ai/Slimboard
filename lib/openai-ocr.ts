@@ -2,8 +2,8 @@ import type { WhiteboardAnalysis } from "./types";
 import { randomUUID } from "node:crypto";
 import { appendUsageRecord, estimateUsageCost, readTokenUsage, type UsageRecord } from "./openai-usage.ts";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-6.1-sol";
-export const DEFAULT_REASONING_EFFORT = "medium";
+export const DEFAULT_OPENAI_MODEL = "gpt-6.1-terra";
+export const DEFAULT_REASONING_EFFORT = "low";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
