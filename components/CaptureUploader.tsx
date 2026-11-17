@@ -11,11 +11,13 @@ import Link from "@/components/AppLink";
 import { AppFrame } from "@/components/AppFrame";
 import { useCaptureDraft } from "@/hooks/useCaptureDraft";
 import { useUnloadWarning } from "@/hooks/useSessionDraft";
+import { prepareBrowserOcr, previewBrowserOcr } from "@/lib/browser-ocr";
 
 /** Photo review: large uncropped preview, retake/album, and one "AI로 변환" action. */
 export function CaptureUploader({ userId }: { userId: string }) {
   const router = useRouter();
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const previewHeadingRef = useRef<HTMLHeadingElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const { draft, setDraft, clearDraft, choose, preparing, error } = useCaptureDraft(userId);
@@ -32,11 +34,28 @@ export function CaptureUploader({ userId }: { userId: string }) {
   const submitting = useRef(false);
   const [stage, setStage] = useState<"idle" | "uploading" | "analyzing" | "saving">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [firstRead, setFirstRead] = useState<{ file: File; text: string } | null>(null);
+  const [requestedNote, setRequestedNote] = useState<string | null>(null);
+  const firstText = requestedNote && requestedNote === draft.noteId && firstRead?.file === file ? firstRead.text : null;
+  useEffect(() => {
+    if (!file) return;
+    let active = true;
+    void previewBrowserOcr(file).then(text => {
+      if (active && text) setFirstRead({ file, text });
+    });
+    return () => { active = false; };
+  }, [file]);
+  useEffect(() => {
+    if (!firstText) return;
+    previewHeadingRef.current?.focus({ preventScroll: true });
+    previewHeadingRef.current?.closest("section")?.scrollIntoView({ block: "start" });
+  }, [firstText]);
 
   async function submit() {
     if (!file || !draft.noteId || submitting.current) return;
     submitting.current = true;
     setMessage(null);
+    setRequestedNote(draft.noteId);
     try {
       if (!draft.uploaded) {
         setStage("uploading");
@@ -74,6 +93,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
 
   function openPicker(input: HTMLInputElement | null) {
     if (!input) return;
+    void prepareBrowserOcr();
     input.value = "";
     input.click();
   }
@@ -100,7 +120,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
       <input ref={uploadInputRef} hidden type="file" accept="image/*" aria-label="앨범에서 사진 고르기" disabled={busy}
         onChange={(event) => void handleFile(event.target.files?.[0])} />
 
-      <section className={`capture-review ${file ? "has-photo" : "is-empty"}`} aria-busy={busy}>
+      <section className={`capture-review ${file ? "has-photo" : "is-empty"}`} aria-busy={preparing}>
         {file ? <>
           <div className="upload-preview">
             {previewUrl ? <PhotoZoom alt="고른 화이트보드 사진" src={previewUrl} downloadUrl={previewUrl} className="capture-photo-zoom" /> : null}
@@ -122,7 +142,13 @@ export function CaptureUploader({ userId }: { userId: string }) {
           </button>
         </div>
 
-        {busy ? <p role="status" className="session-caption">{preparing ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 올리고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "AI가 사진 속 내용을 정리하고 있어요."}</p> : null}
+        {firstText ? (
+          <section className="capture-transcription document-section" aria-labelledby="capture-transcription-title">
+            <h2 id="capture-transcription-title" ref={previewHeadingRef} tabIndex={-1}>먼저 읽은 글자</h2>
+            <p className="capture-transcription-text">{firstText}</p>
+            {busy ? <p className="session-caption" role="status">{stage === "saving" ? "노트를 저장하고 있어요." : "글자를 확인하고 요약하고 있어요."}</p> : null}
+          </section>
+        ) : busy ? <p role="status" className="session-caption">{preparing ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 올리고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "AI가 사진 속 내용을 정리하고 있어요."}</p> : null}
         {draft.uploaded && draft.noteId ? <Link className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</Link> : null}
         {notice ? <p className="inline-message" role="status">{notice}</p> : null}
       </section>

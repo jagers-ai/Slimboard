@@ -14,12 +14,16 @@
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc --noEmit",
     "lab:test": "node --test scripts/openai-ocr.test.mjs scripts/openai-usage.test.mjs scripts/codex-ocr.test.mjs scripts/codex-lab-gate.test.mjs scripts/codex-share.test.mjs scripts/camera-session.test.mjs scripts/note-mutations.test.mjs scripts/cloud-storage.test.mjs scripts/external-browser.test.mjs scripts/photo-view.test.mjs scripts/visible-viewport.test.mjs",
-    "test:sites-runtime": "node --test scripts/sites-runtime.test.mjs"
+    "test:sites-runtime": "node --test scripts/sites-runtime.test.mjs",
+    "test:ocr-preview": "node --test scripts/ocr-preview.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.7.1",
+    "@paddleocr/paddleocr-js": "0.4.2",
     "@shadcn/react": "^0.3.0",
+    "@supabase/ssr": "0.10.2",
+    "@supabase/supabase-js": "2.105.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "^1.1.1",
@@ -30,6 +34,7 @@
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
+    "onnxruntime-web": "1.24.3",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",
     "react-day-picker": "^10.0.1",
@@ -40,9 +45,7 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
-    "zod": "^3.25.76",
-    "@supabase/ssr": "0.10.2",
-    "@supabase/supabase-js": "2.105.3"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

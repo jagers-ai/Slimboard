@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Camera, Images, LoaderCircle, Plus } from "lucide-react";
 
 import { useCaptureDraft } from "@/hooks/useCaptureDraft";
+import { prepareBrowserOcr } from "@/lib/browser-ocr";
 
 /**
  * Floating "새 노트" button on Home. Opens a bottom sheet with the two
@@ -48,7 +49,10 @@ export function NewNoteButton({ userId }: { userId: string }) {
       onChange={event => void handle(event.target.files?.[0])} />
 
     {error ? <p className="fab-message" role="alert">{error}</p> : preparing ? <p className="sr-only" role="status">사진을 준비하고 있어요.</p> : null}
-    <button ref={fab} className="fab" type="button" aria-haspopup="dialog" disabled={preparing} onClick={() => setOpen(true)}>
+    <button ref={fab} className="fab" type="button" aria-haspopup="dialog" disabled={preparing} onClick={() => {
+      setOpen(true);
+      void prepareBrowserOcr();
+    }}>
       {preparing ? <LoaderCircle size={22} className="spinner" aria-hidden="true" /> : <Plus size={22} strokeWidth={2.6} aria-hidden="true" />}
       {preparing ? "사진 준비 중" : "새 노트"}
     </button>

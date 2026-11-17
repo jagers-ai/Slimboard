@@ -1,0 +1,36 @@
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
+
+// Build-time only. Runtime downloads come from Slimboard; selected photos never
+// go to the OCR asset provider. Change the asset directory when its bytes change.
+const output = new URL("../public/ocr/v1/", import.meta.url);
+await mkdir(output, { recursive: true });
+const assetRoot = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/";
+const models = [
+  ["PP-OCRv5_mobile_det", "781056046c9ed77a15c94681605db6a0f62317c2e9cce6931c71da2478d4bc30"],
+  ["korean_PP-OCRv5_mobile_rec", "568ed8b43a260adc9f484d92105e425ea8cddf8ce16940c177bc12864cfb0eb0"],
+];
+const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+await Promise.all([
+  copyFile(new URL("../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs", import.meta.url), new URL("ort.mjs", output)),
+  readFile(new URL("../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm", import.meta.url))
+    .then(bytes => writeFile(new URL("ort-gzip.bin", output), gzipSync(bytes))),
+  // The SDK's pinned standalone worker already contains OpenCV and ORT. Ship it
+  // once; importing the SDK from Vinext would duplicate both in client and SSR.
+  readFile(new URL("../node_modules/@paddleocr/paddleocr-js/dist/assets/worker-entry-C9UNuyOJ.js", import.meta.url), "utf8")
+    .then(source => writeFile(new URL("engine.js", output), source.replace(/^\/\/# sourceMappingURL=.*$/m, ""))),
+  ...["onnxruntime-LICENSE", "onnxruntime-NOTICES", "paddleocr-LICENSE", "opencv-LICENSE"].map(name =>
+    copyFile(new URL(`../docs/third-party-ocr/${name}.txt`, import.meta.url), new URL(`${name}.txt`, output))),
+  ...models.map(async ([name, checksum]) => {
+    const target = new URL(`${name}.tar`, output);
+    const cached = await readFile(target).catch(error => { if (error.code !== "ENOENT") throw error; });
+    if (cached && sha256(cached) === checksum) return;
+    const response = await fetch(`${assetRoot}${name}_onnx_infer.tar`, { signal: AbortSignal.timeout(45_000) });
+    if (!response.ok) throw new Error(`Could not download browser OCR model ${name} (HTTP ${response.status})`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (sha256(bytes) !== checksum) throw new Error(`Unexpected checksum for ${name}`);
+    await writeFile(fileURLToPath(target), bytes);
+  }),
+]);

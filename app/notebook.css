@@ -242,6 +242,10 @@ h1:focus, h2:focus { outline: none; }
 .capture-review .capture-actions .button { min-height: 52px; padding: 10px 8px; flex-wrap: wrap; }
 .capture-review .session-caption { margin: 0; text-align: center; }
 .capture-review .inline-message { margin: 0; }
+.capture-transcription { border-top: 1px solid var(--line); padding: 16px 0 0; }
+.capture-transcription h2 { margin-bottom: 8px; }
+.capture-transcription-text { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.capture-transcription .session-caption { text-align: left; }
 
 /* Note detail: full-width photo first, then the editable document. */
 .note-hero { position: relative; }

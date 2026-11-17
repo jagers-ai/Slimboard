@@ -95,6 +95,11 @@ without scrolling; landscape and enlarged text scroll above the action bar.
 The home sheet and the review screen share `useCaptureDraft`, so the
 account-scoped photo draft survives leaving and returning.
 
+After AI로 변환, show 먼저 읽은 글자 when a local transcription is available.
+Keep line breaks, mark low-confidence lines with `___`, and focus the preview
+heading. The subsequent saved note holds the verified text and summary. Keep
+the same retry path when the local preview or the final analysis is unavailable.
+
 ## Photo enlargement
 
 Use shared `PhotoZoom` for capture review, saved-note photos and the camera lab.

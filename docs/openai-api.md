@@ -7,6 +7,10 @@ login in the app's analysis path.
 New analyses use `___` in the transcription for each unreadable span. The
 surrounding text and line breaks are kept; summaries omit unreadable details.
 
+The signed-in capture screen can show a local browser transcription before the
+server finishes. That preview is temporary; the original server analysis and
+its summary remain the saved result. See [browser OCR](browser-ocr.md).
+
 The server reads the existing `OPENAI_API_KEY`. Configure it through the secure
 OpenAI Developers setup or your existing server secret manager. The key must
 never be exposed through a `NEXT_PUBLIC_` variable, browser code, logs, or Git.
