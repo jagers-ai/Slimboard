@@ -1,10 +1,12 @@
 "use client";
 
 import { formatBrowserOcrPreview } from "./ocr-preview";
-
-const assetPath = "/ocr/v2/";
-const detection = "PP-OCRv5_mobile_det";
-const recognition = "korean_PP-OCRv5_mobile_rec";
+import {
+  browserOcrRoot,
+  browserOcrDetection,
+  browserOcrRecognition,
+  browserOcrDownloads,
+} from "./browser-ocr-assets";
 type OcrPage = { items: { text: string; score: number }[] };
 type WorkerReply = { kind: string; requestId: number; status: string; payload: unknown };
 
@@ -38,8 +40,8 @@ function connect(worker: Worker) {
 }
 
 async function initialize() {
-  const root = new URL(assetPath, location.origin);
-  const worker = new Worker(new URL("engine.js", root), { type: "module" });
+  const root = new URL(browserOcrRoot, location.origin);
+  const worker = new Worker(new URL("engine-warm.js", root), { type: "module" });
   const request = connect(worker);
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 12_000);
@@ -53,17 +55,15 @@ async function initialize() {
     }
     // Start both model downloads while the browser is loading the worker and
     // runtime. Blob URLs let the pinned worker read them without a second fetch.
-    const artifacts = await Promise.all([
-      unpack("ort-gzip.bin", "application/wasm"),
-      unpack(`${detection}.bin`, "application/x-tar"),
-      unpack(`${recognition}.bin`, "application/x-tar"),
-    ]);
+    const artifacts = await Promise.all(browserOcrDownloads.map((filename, index) =>
+      unpack(filename, index === 0 ? "application/wasm" : "application/x-tar"),
+    ));
     for (const artifact of artifacts) assets.push(URL.createObjectURL(artifact));
     const [wasm, det, rec] = assets;
     await request("init", {
       options: {
         pipelineConfig: {
-          modelSelection: { textDetectionModelName: detection, textRecognitionModelName: recognition },
+          modelSelection: { textDetectionModelName: browserOcrDetection, textRecognitionModelName: browserOcrRecognition },
           assets: { det: { url: det }, rec: { url: rec } },
           textDetectionBatchSize: 1, textRecognitionBatchSize: 6, warnings: [],
           runtimeDefaults: { textDetThresh: 0.3, textDetBoxThresh: 0.6, textDetUnclipRatio: 1.5 },

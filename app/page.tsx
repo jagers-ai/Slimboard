@@ -1,6 +1,7 @@
 import { AccountBoundary } from "@/components/AccountBoundary";
 import Link from "@/components/AppLink";
 import { Search } from "lucide-react";
+import { headers } from "next/headers";
 
 import { AppFrame } from "@/components/AppFrame";
 import { NewNoteButton, PendingPhotoNotice } from "@/components/NewNoteButton";
@@ -8,6 +9,7 @@ import { NoteList } from "@/components/NoteList";
 import { SignInButton } from "@/components/SignInButton";
 import { hasCoreEnv } from "@/lib/env";
 import { getCurrentUser } from "@/lib/auth";
+import { browserOcrDownloads, browserOcrRoot } from "@/lib/browser-ocr-assets";
 import { listNotesForUser } from "@/lib/notes";
 import { ensurePersonalWorkspace } from "@/lib/workspaces";
 
@@ -26,8 +28,12 @@ export default async function Home() {
 
   await ensurePersonalWorkspace(user);
   const notes = await listNotesForUser({ userId: user.id });
+  const saveData = (await headers()).get("save-data") === "on";
 
-  return (
+  return <>
+    {!saveData && browserOcrDownloads.map(file =>
+      <link key={file} rel="preload" as="fetch" crossOrigin="anonymous" href={browserOcrRoot + file} />,
+    )}
     <AccountBoundary key={user.id} userId={user.id}><AppFrame active="home" overlay={<NewNoteButton key={user.id} userId={user.id} />}>
       <header className="home-header">
         <h1 className="home-brand">슬림보드</h1>
@@ -40,7 +46,7 @@ export default async function Home() {
         <p>오른쪽 아래 새 노트 버튼으로 화이트보드를 찍어보세요.</p>
       </div>} />
     </AppFrame></AccountBoundary>
-  );
+  </>;
 }
 
 function Landing() {

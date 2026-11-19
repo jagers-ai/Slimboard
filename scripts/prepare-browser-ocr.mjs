@@ -42,7 +42,12 @@ await Promise.all([
   // The SDK's pinned standalone worker already contains OpenCV and ORT. Ship it
   // once; importing the SDK from Vinext would duplicate both in client and SSR.
   readFile(new URL("../node_modules/@paddleocr/paddleocr-js/dist/assets/worker-entry-C9UNuyOJ.js", import.meta.url), "utf8")
-    .then(source => writeFile(new URL("engine.js", output), source.replace(/^\/\/# sourceMappingURL=.*$/m, ""))),
+    .then(source => {
+      if (!source.includes("async function initOpenCvRuntime()")) throw new Error("The pinned OCR worker entry changed.");
+      // The runner awaits this same promise when the models arrive.
+      const warm = "void initOpenCvRuntime().catch(() => {});";
+      return writeFile(new URL("engine-warm.js", output), source.replace(/^\/\/# sourceMappingURL=.*$/m, "") + "\n" + warm);
+    }),
   ...["onnxruntime-LICENSE", "onnxruntime-NOTICES", "paddleocr-LICENSE", "opencv-LICENSE"].map(name =>
     copyFile(new URL(`../docs/third-party-ocr/${name}.txt`, import.meta.url), new URL(`${name}.txt`, output))),
   ...models.map(([name, checksum]) => prepareModel(name, checksum)),
