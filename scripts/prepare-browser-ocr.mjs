@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { buildBrowserOcrWorker } from "./paddle-ocr-worker.mjs";
 
 // Build-time only. Runtime downloads come from Slimboard; selected photos never
 // go to the OCR asset provider. Change the asset directory when its bytes change.
@@ -42,17 +43,7 @@ await Promise.all([
   // The SDK's pinned standalone worker already contains OpenCV and ORT. Ship it
   // once; importing the SDK from Vinext would duplicate both in client and SSR.
   readFile(new URL("../node_modules/@paddleocr/paddleocr-js/dist/assets/worker-entry-C9UNuyOJ.js", import.meta.url), "utf8")
-    .then(source => {
-      const probeGpu = "const webgpuState = await detectWebGpuAvailability();";
-      if (!source.includes("async function initOpenCvRuntime()") || !source.includes(probeGpu)) {
-        throw new Error("The pinned OCR worker entry changed.");
-      }
-      // The runner awaits this same promise when the models arrive.
-      const warm = "void initOpenCvRuntime().catch(() => {});";
-      const worker = source.replace(/^\/\/# sourceMappingURL=.*$/m, "")
-        .replace(probeGpu, 'const webgpuState = backend === "wasm" ? { available: false, reason: "WASM selected" } : await detectWebGpuAvailability();');
-      return writeFile(new URL("engine-fast.js", output), worker + "\n" + warm);
-    }),
+    .then(source => writeFile(new URL("engine-parallel.js", output), buildBrowserOcrWorker(source))),
   ...["onnxruntime-LICENSE", "onnxruntime-NOTICES", "paddleocr-LICENSE", "opencv-LICENSE"].map(name =>
     copyFile(new URL(`../docs/third-party-ocr/${name}.txt`, import.meta.url), new URL(`${name}.txt`, output))),
   ...models.map(([name, checksum]) => prepareModel(name, checksum)),

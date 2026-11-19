@@ -5,7 +5,8 @@ import {
   browserOcrRoot,
   browserOcrDetection,
   browserOcrRecognition,
-  browserOcrDownloads,
+  browserOcrModels,
+  browserOcrWasm,
   browserOcrWorker,
 } from "./browser-ocr-assets";
 type OcrPage = { items: { text: string; score: number }[] };
@@ -66,28 +67,33 @@ async function initialize() {
       worker = new Worker(url, { type: "module" });
       return worker;
     })();
-    const downloads = Promise.all(browserOcrDownloads.map((filename, index) =>
-      unpack(filename, index === 0 ? "application/wasm" : "application/x-tar"),
-    ));
-    const [runningWorker, artifacts] = await Promise.all([workerReady, downloads]);
-    const [wasm, det, rec] = artifacts.map(artifact => {
-      const url = URL.createObjectURL(artifact);
+    const modelMessages = browserOcrModels.map(async filename => {
+      const [runningWorker, blob] = await Promise.all([workerReady, unpack(filename, "application/x-tar")]);
+      runningWorker.postMessage({ kind: "slimboard-ocr-model", filename, blob });
+    });
+    const initialized = (async () => {
+      const [runningWorker, runtime] = await Promise.all([workerReady, unpack(browserOcrWasm, "application/wasm")]);
+      const url = URL.createObjectURL(runtime);
       assets.push(url);
-      return url;
-    });
-    const request = connect(runningWorker);
-    await request("init", {
-      options: {
-        pipelineConfig: {
-          modelSelection: { textDetectionModelName: browserOcrDetection, textRecognitionModelName: browserOcrRecognition },
-          assets: { det: { url: det }, rec: { url: rec } },
-          textDetectionBatchSize: 1, textRecognitionBatchSize: 6, warnings: [],
-          runtimeDefaults: { textDetThresh: 0.3, textDetBoxThresh: 0.6, textDetUnclipRatio: 1.5 },
+      const request = connect(runningWorker);
+      await request("init", {
+        options: {
+          pipelineConfig: {
+            modelSelection: { textDetectionModelName: browserOcrDetection, textRecognitionModelName: browserOcrRecognition },
+            assets: {
+              det: { url: `slimboard-ocr:${browserOcrModels[0]}` },
+              rec: { url: `slimboard-ocr:${browserOcrModels[1]}` },
+            },
+            textDetectionBatchSize: 1, textRecognitionBatchSize: 6, warnings: [],
+            runtimeDefaults: { textDetThresh: 0.3, textDetBoxThresh: 0.6, textDetUnclipRatio: 1.5 },
+          },
+          ortOptions: { backend: "wasm", wasmPaths: { mjs: new URL("ort.mjs", root).href, wasm: url }, numThreads: 1, disableWasmProxy: true },
         },
-        ortOptions: { backend: "wasm", wasmPaths: { mjs: new URL("ort.mjs", root).href, wasm }, numThreads: 1, disableWasmProxy: true },
-      },
-    });
-    return { request, dispose: () => runningWorker.terminate() };
+      });
+      return { request, dispose: () => runningWorker.terminate() };
+    })();
+    const [engine] = await Promise.all([initialized, ...modelMessages]);
+    return engine;
   } catch (error) {
     worker?.terminate();
     throw error;
