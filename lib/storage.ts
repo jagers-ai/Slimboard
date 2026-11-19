@@ -26,9 +26,10 @@ export async function uploadImageObject(input: {
       upsert: false,
     });
 
-  if (error && String((error as { statusCode?: string }).statusCode) !== "409") {
-    throw error;
-  }
+  if (!error) return true;
+  if (error.status === 409 || ["409", "ResourceAlreadyExists", "KeyAlreadyExists"].includes(error.statusCode ?? "") ||
+    (error.status === 400 && /^(the )?(asset|resource) already exists\.?$/i.test(error.message))) return false;
+  throw error;
 }
 
 export async function downloadImageObject(path: string) {

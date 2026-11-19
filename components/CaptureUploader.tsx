@@ -4,35 +4,45 @@ import { readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
-import { useRouter } from "next/navigation";
 import { Camera, Images, LoaderCircle, X } from "lucide-react";
 
 import Link from "@/components/AppLink";
 import { AppFrame } from "@/components/AppFrame";
-import { useCaptureDraft } from "@/hooks/useCaptureDraft";
+import { NoteEditor } from "@/components/NoteEditor";
+import { emptyPhotoDraft, useCaptureDraft, type PhotoDraft } from "@/hooks/useCaptureDraft";
 import { useUnloadWarning } from "@/hooks/useSessionDraft";
 import { prepareBrowserOcr, previewBrowserOcr } from "@/lib/browser-ocr";
+import { draftEpoch, readDraft, writeDraft } from "@/lib/session-drafts";
+import type { NoteEditorNote } from "@/lib/types";
 
 /** Photo review: large uncropped preview, retake/album, and one "AI로 변환" action. */
 export function CaptureUploader({ userId }: { userId: string }) {
-  const router = useRouter();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previewHeadingRef = useRef<HTMLHeadingElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const { draft, setDraft, clearDraft, choose, preparing, error } = useCaptureDraft(userId);
+  const { draft, clearDraft, choose, preparing, error } = useCaptureDraft(userId);
   const { file } = draft;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useUnloadWarning(Boolean(file));
-  const previewUrl = useObjectUrl(file);
+  const [result, setResult] = useState<{ note: NoteEditorNote; file: File | null } | null>(null);
+  useUnloadWarning(Boolean(file) && !result);
+  const previewUrl = useObjectUrl(result?.file ?? file);
+  useEffect(() => {
+    if (!result) return;
+    const leaveResult = () => {
+      if (location.pathname !== `/notes/${result.note.id}`) setResult(null);
+    };
+    window.addEventListener("popstate", leaveResult);
+    return () => window.removeEventListener("popstate", leaveResult);
+  }, [result]);
   useEffect(() => {
     if (!file) return;
     headingRef.current?.focus({ preventScroll: true });
     headingRef.current?.closest(".app-scroll")?.scrollTo({ top: 0 });
   }, [file]);
   const submitting = useRef(false);
-  const [stage, setStage] = useState<"idle" | "uploading" | "analyzing" | "saving">("idle");
+  const [stage, setStage] = useState<"idle" | "analyzing" | "saving">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [firstRead, setFirstRead] = useState<{ file: File; text: string } | null>(null);
   const [requestedNote, setRequestedNote] = useState<string | null>(null);
@@ -54,29 +64,44 @@ export function CaptureUploader({ userId }: { userId: string }) {
   async function submit() {
     if (!file || !draft.noteId || submitting.current) return;
     submitting.current = true;
+    const epoch = draftEpoch();
+    const { noteId, uploaded, recovery } = draft;
     setMessage(null);
-    setRequestedNote(draft.noteId);
+    setRequestedNote(noteId);
+    setStage(recovery ? "saving" : "analyzing");
     try {
-      if (!draft.uploaded) {
-        setStage("uploading");
+      let response: Response;
+      if (!uploaded && !recovery) {
         const formData = new FormData();
         formData.append("image", file);
-        formData.append("noteId", draft.noteId);
-        const upload = await fetch("/api/notes", { method: "POST", body: formData });
-        const payload = await readNoteResponse(upload);
-        if (!upload.ok) throw new Error(payload.error ?? "사진을 저장하지 못했어요.");
-        setDraft(current => ({ ...current, uploaded: true }));
+        formData.append("noteId", noteId);
+        formData.append("analyze", "1");
+        response = await fetch("/api/notes", { method: "POST", body: formData });
+      } else {
+        response = await fetch(`/api/notes/${noteId}/analyze`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(recovery ? { recovery } : {}),
+        });
       }
-      setStage(draft.recovery ? "saving" : "analyzing");
-      const response = await fetch(`/api/notes/${draft.noteId}/analyze`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft.recovery ? { recovery: draft.recovery } : {}),
-      });
       const payload = await readNoteResponse(response);
-      if (payload.recovery) { const recovery = payload.recovery; setDraft(current => ({ ...current, recovery })); }
+      const key = `${userId}:capture`;
+      const current = readDraft<PhotoDraft>(key);
+      if (draftEpoch() !== epoch || current?.noteId !== noteId) return;
+      if (payload.uploaded || payload.recovery) {
+        writeDraft(key, { ...current, uploaded: true, recovery: payload.recovery ?? current.recovery });
+      }
       if (!response.ok) throw new Error(payload.error ?? "노트를 만들지 못했어요.");
+      // During a rollout an older server can still respond with an upload-only
+      // result. Keep the photo draft marked as uploaded so retry can analyze it.
+      if (!payload.note || payload.note.id !== noteId || payload.note.status !== "completed") {
+        if (payload.note?.id === noteId) writeDraft(key, { ...current, uploaded: true });
+        throw new Error("노트를 확인하지 못했어요. 다시 시도해 주세요.");
+      }
+      writeDraft(key, emptyPhotoDraft);
       clearDraft();
-      if (mounted.current) router.push(`/notes/${draft.noteId}`);
+      if (!mounted.current) return;
+      window.history.replaceState(null, "", `/notes/${noteId}`);
+      setResult({ note: payload.note, file: payload.usedUploadedImage ? file : null });
     } catch (cause) {
       if (mounted.current) setMessage(cause instanceof Error ? cause.message : "연결이 끊겼어요. 사진은 그대로 있으니 다시 시도해 주세요.");
     } finally {
@@ -100,12 +125,17 @@ export function CaptureUploader({ userId }: { userId: string }) {
 
   const busy = stage !== "idle" || preparing;
   const notice = message ?? error;
-  const actionLabel = preparing ? "사진 준비 중" : stage === "uploading" ? "사진 올리는 중" : stage === "analyzing" ? "AI가 정리하는 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "AI로 변환";
+  const actionLabel = preparing ? "사진 준비 중" : stage === "analyzing" ? "AI가 정리하는 중" : stage === "saving" ? "노트 저장 중" : draft.recovery ? "노트 저장 다시 시도" : "AI로 변환";
 
   const footer = file ? <button className="button primary full-width" type="button" onClick={submit} disabled={busy}>
     {busy ? <LoaderCircle size={20} className="spinner" aria-hidden="true" /> : null}
     {actionLabel}
   </button> : undefined;
+
+  if (result) {
+    return <NoteEditor key={result.note.id} note={result.note} userId={userId}
+      photoUrl={`/api/notes/${result.note.id}/image`} previewUrl={previewUrl} />;
+  }
 
   return (
     <AppFrame active="home" className="capture-shell" footer={footer}>
@@ -148,7 +178,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
             <p className="capture-transcription-text">{firstText}</p>
             {busy ? <p className="session-caption" role="status">{stage === "saving" ? "노트를 저장하고 있어요." : "글자를 확인하고 요약하고 있어요."}</p> : null}
           </section>
-        ) : busy ? <p role="status" className="session-caption">{preparing ? "사진을 준비하고 있어요." : stage === "uploading" ? "사진을 올리고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "AI가 사진 속 내용을 정리하고 있어요."}</p> : null}
+        ) : busy ? <p role="status" className="session-caption">{preparing ? "사진을 준비하고 있어요." : stage === "saving" ? "정리된 노트를 저장하고 있어요." : "AI가 사진 속 내용을 정리하고 있어요."}</p> : null}
         {draft.uploaded && draft.noteId ? <Link className="text-button" href={`/notes/${draft.noteId}`}>저장된 사진 확인</Link> : null}
         {notice ? <p className="inline-message" role="status">{notice}</p> : null}
       </section>

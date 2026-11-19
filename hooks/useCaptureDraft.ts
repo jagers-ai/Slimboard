@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { useSessionDraft } from "@/hooks/useSessionDraft";
 import { prepareCameraPhoto } from "@/lib/prepare-camera-photo";
+import { prepareBrowserOcr, previewBrowserOcr } from "@/lib/browser-ocr";
 
 export type PhotoDraft = { file: File | null; noteId: string | null; uploaded: boolean; recovery: string | null };
 
@@ -25,8 +26,10 @@ export function useCaptureDraft(userId: string) {
     busy.current = true;
     setPreparing(true);
     setError(null);
+    void prepareBrowserOcr();
     try {
       const prepared = await prepareCameraPhoto(next);
+      void previewBrowserOcr(prepared);
       setDraft({ file: prepared, noteId: crypto.randomUUID(), uploaded: false, recovery: null });
       return true;
     } catch (cause) {

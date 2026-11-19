@@ -171,7 +171,7 @@ export class NoteOperationError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
-export async function analyzeNoteForUser(noteId: string, user: AppUser, options: { recovery?: string; force?: boolean } = {}) {
+export async function analyzeNoteForUser(noteId: string, user: AppUser, options: { recovery?: string; force?: boolean; uploadedImage?: Buffer } = {}) {
   const supabase = createAdminClient();
   const note = await getOwnedNote(noteId, user.id, getNoteForUser);
   if (!note) throw new NoteOperationError("기록을 찾을 수 없어요.", 404);
@@ -215,7 +215,7 @@ export async function analyzeNoteForUser(noteId: string, user: AppUser, options:
   }
   let result;
   try {
-    const image = await downloadImageObject(note.analysis_image_path);
+    const image = options.uploadedImage ?? await downloadImageObject(note.analysis_image_path);
     result = await analyzeWhiteboardImage({ buffer: image, mimeType: "image/jpeg" });
   } catch {
     await supabase.from("whiteboard_notes").update({ status: "failed", error_message: "사진을 변환하지 못했어요. 사진은 저장되어 있어요.", updated_at: new Date().toISOString() })

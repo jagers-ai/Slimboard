@@ -10,15 +10,10 @@ import { AppFrame } from "@/components/AppFrame";
 import { DocumentField } from "@/components/DocumentField";
 import { NoteDocument } from "@/components/NoteDocument";
 import { StatusBadge } from "@/components/StatusBadge";
-import type { WhiteboardNote } from "@/lib/types";
-
-type NoteEditorNote = Pick<
-  WhiteboardNote,
-  "id" | "title" | "raw_text" | "summary" | "keywords" | "error_message" | "created_at" | "status"
->;
+import type { NoteEditorNote } from "@/lib/types";
 
 import { useSessionDraft, useUnloadWarning } from "@/hooks/useSessionDraft";
-export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; userId: string; photoUrl?: string | null }) {
+export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteEditorNote; userId: string; photoUrl?: string | null; previewUrl?: string }) {
   const router = useRouter();
   const [draft, setDraft, clearDraft] = useSessionDraft(`${userId}:note:${note.id}`, { title: note.title, rawText: note.raw_text, summary: note.summary, recovery: null as string | null });
   const { title, rawText, summary, recovery } = draft;
@@ -147,7 +142,7 @@ export function NoteEditor({ note, userId, photoUrl }: { note: NoteEditorNote; u
 
   return <AppFrame active="home" className="note-shell" footer={footer}>
     <div className="document-editor" aria-busy={busy}>
-      <NoteDocument createdAt={note.created_at} photoUrl={photoUrl} downloadUrl={downloadUrl}
+      <NoteDocument createdAt={note.created_at} photoUrl={previewUrl ?? photoUrl} downloadUrl={downloadUrl}
         analysis={{ title, rawText, summary, keywords: note.keywords }}
         heroActions={<>
           <Link className="hero-button" href="/" aria-label="홈으로"><ChevronLeft size={24} aria-hidden="true" /></Link>

@@ -30,6 +30,11 @@ export type NoteWithImageUrl = WhiteboardNote & {
   image_url: string | null;
 };
 
+export type NoteEditorNote = Pick<
+  WhiteboardNote,
+  "id" | "title" | "raw_text" | "summary" | "keywords" | "error_message" | "created_at" | "status"
+>;
+
 export type NotePreview = Pick<
   WhiteboardNote,
   | "id"
