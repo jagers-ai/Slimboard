@@ -9,7 +9,7 @@ import { NoteList } from "@/components/NoteList";
 import { SignInButton } from "@/components/SignInButton";
 import { hasCoreEnv } from "@/lib/env";
 import { getCurrentUser } from "@/lib/auth";
-import { browserOcrDownloads, browserOcrRoot } from "@/lib/browser-ocr-assets";
+import { browserOcrDownloads, browserOcrRoot, browserOcrWorker } from "@/lib/browser-ocr-assets";
 import { listNotesForUser } from "@/lib/notes";
 import { ensurePersonalWorkspace } from "@/lib/workspaces";
 
@@ -31,7 +31,7 @@ export default async function Home() {
   const saveData = (await headers()).get("save-data") === "on";
 
   return <>
-    {!saveData && browserOcrDownloads.map(file =>
+    {!saveData && [browserOcrWorker, ...browserOcrDownloads].map(file =>
       <link key={file} rel="preload" as="fetch" crossOrigin="anonymous" href={browserOcrRoot + file} />,
     )}
     <AccountBoundary key={user.id} userId={user.id}><AppFrame active="home" overlay={<NewNoteButton key={user.id} userId={user.id} />}>

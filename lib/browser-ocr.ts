@@ -6,6 +6,7 @@ import {
   browserOcrDetection,
   browserOcrRecognition,
   browserOcrDownloads,
+  browserOcrWorker,
 } from "./browser-ocr-assets";
 type OcrPage = { items: { text: string; score: number }[] };
 type WorkerReply = { kind: string; requestId: number; status: string; payload: unknown };
@@ -41,25 +42,40 @@ function connect(worker: Worker) {
 
 async function initialize() {
   const root = new URL(browserOcrRoot, location.origin);
-  const worker = new Worker(new URL("engine-warm.js", root), { type: "module" });
-  const request = connect(worker);
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 12_000);
   const assets: string[] = [];
+  let worker: Worker | undefined;
   try {
-    async function unpack(filename: string, type: string) {
+    async function download(filename: string) {
       const response = await fetch(new URL(filename, root), { signal: abort.signal });
       if (!response.ok || !response.body) throw new Error("Browser OCR assets unavailable");
-      const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
+      return response.body;
+    }
+    async function unpack(filename: string, type: string) {
+      const stream = (await download(filename)).pipeThrough(new DecompressionStream("gzip"));
       return new Response(stream, { headers: { "Content-Type": type } }).blob();
     }
-    // Start both model downloads while the browser is loading the worker and
-    // runtime. Blob URLs let the pinned worker read them without a second fetch.
-    const artifacts = await Promise.all(browserOcrDownloads.map((filename, index) =>
+    // Use the same fetch as the document's preload. The running worker warms
+    // OpenCV while the two model downloads and decompression finish.
+    const workerReady = (async () => {
+      const source = await new Response(await download(browserOcrWorker), { headers: { "Content-Type": "text/javascript" } }).blob();
+      if (abort.signal.aborted) throw new Error("Browser OCR initialization cancelled");
+      const url = URL.createObjectURL(source);
+      assets.push(url);
+      worker = new Worker(url, { type: "module" });
+      return worker;
+    })();
+    const downloads = Promise.all(browserOcrDownloads.map((filename, index) =>
       unpack(filename, index === 0 ? "application/wasm" : "application/x-tar"),
     ));
-    for (const artifact of artifacts) assets.push(URL.createObjectURL(artifact));
-    const [wasm, det, rec] = assets;
+    const [runningWorker, artifacts] = await Promise.all([workerReady, downloads]);
+    const [wasm, det, rec] = artifacts.map(artifact => {
+      const url = URL.createObjectURL(artifact);
+      assets.push(url);
+      return url;
+    });
+    const request = connect(runningWorker);
     await request("init", {
       options: {
         pipelineConfig: {
@@ -71,9 +87,9 @@ async function initialize() {
         ortOptions: { backend: "wasm", wasmPaths: { mjs: new URL("ort.mjs", root).href, wasm }, numThreads: 1, disableWasmProxy: true },
       },
     });
-    return { request, dispose: () => worker.terminate() };
+    return { request, dispose: () => runningWorker.terminate() };
   } catch (error) {
-    worker.terminate();
+    worker?.terminate();
     throw error;
   } finally {
     clearTimeout(timeout);
