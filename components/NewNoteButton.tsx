@@ -23,6 +23,15 @@ export function NewNoteButton({ userId }: { userId: string }) {
   const { choose, preparing, error } = useCaptureDraft(userId);
 
   useEffect(() => {
+    // Give the first photo a head start while the signed-in home is visible.
+    // On a data-saving connection, the existing camera action starts it.
+    const network = navigator as Navigator & { connection?: { saveData?: boolean } };
+    if (document.visibilityState === "visible" && !network.connection?.saveData) {
+      void prepareBrowserOcr();
+    }
+  }, []);
+
+  useEffect(() => {
     const dialog = sheet.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();

@@ -2,7 +2,7 @@
 
 import { formatBrowserOcrPreview } from "./ocr-preview";
 
-const assetPath = "/ocr/v1/";
+const assetPath = "/ocr/v2/";
 const detection = "PP-OCRv5_mobile_det";
 const recognition = "korean_PP-OCRv5_mobile_rec";
 type OcrPage = { items: { text: string; score: number }[] };
@@ -41,17 +41,30 @@ async function initialize() {
   const root = new URL(assetPath, location.origin);
   const worker = new Worker(new URL("engine.js", root), { type: "module" });
   const request = connect(worker);
-  let wasm: string | undefined;
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 12_000);
+  const assets: string[] = [];
   try {
-    const response = await fetch(new URL("ort-gzip.bin", root), { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok || !response.body) throw new Error("Browser OCR runtime unavailable");
-    const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
-    wasm = URL.createObjectURL(await new Response(stream, { headers: { "Content-Type": "application/wasm" } }).blob());
+    async function unpack(filename: string, type: string) {
+      const response = await fetch(new URL(filename, root), { signal: abort.signal });
+      if (!response.ok || !response.body) throw new Error("Browser OCR assets unavailable");
+      const stream = response.body.pipeThrough(new DecompressionStream("gzip"));
+      return new Response(stream, { headers: { "Content-Type": type } }).blob();
+    }
+    // Start both model downloads while the browser is loading the worker and
+    // runtime. Blob URLs let the pinned worker read them without a second fetch.
+    const artifacts = await Promise.all([
+      unpack("ort-gzip.bin", "application/wasm"),
+      unpack(`${detection}.bin`, "application/x-tar"),
+      unpack(`${recognition}.bin`, "application/x-tar"),
+    ]);
+    for (const artifact of artifacts) assets.push(URL.createObjectURL(artifact));
+    const [wasm, det, rec] = assets;
     await request("init", {
       options: {
         pipelineConfig: {
           modelSelection: { textDetectionModelName: detection, textRecognitionModelName: recognition },
-          assets: { det: { url: new URL(`${detection}.tar`, root).href }, rec: { url: new URL(`${recognition}.tar`, root).href } },
+          assets: { det: { url: det }, rec: { url: rec } },
           textDetectionBatchSize: 1, textRecognitionBatchSize: 6, warnings: [],
           runtimeDefaults: { textDetThresh: 0.3, textDetBoxThresh: 0.6, textDetUnclipRatio: 1.5 },
         },
@@ -63,7 +76,9 @@ async function initialize() {
     worker.terminate();
     throw error;
   } finally {
-    if (wasm) URL.revokeObjectURL(wasm);
+    clearTimeout(timeout);
+    abort.abort();
+    assets.forEach(url => URL.revokeObjectURL(url));
   }
 }
 
