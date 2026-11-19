@@ -17,6 +17,17 @@ No private API key is sent to the browser. Runtime values are Sites secrets;
 only Supabase's public URL/publishable key are compiled into browser assets.
 Local .env.local/.dev.vars and outputs are ignored and never published.
 
+### 배포용 브라우저 설정 확인
+
+별도 Sites 체크아웃에서 빌드할 때는 기존에 동작한 체크아웃의
+`NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`를
+Git에서 제외된 `.env.local`에 연결한다. 이 값이 없으면 서버에서 로그인 상태가
+확인되어도 브라우저에서 로그인 및 사진 선택 화면을 초기화할 수 없다.
+패키징 뒤 공개 설정이 브라우저 번들에 있는지, 환경 파일이 배포 파일에 들어 있지
+않은지 확인한다. Sites는 같은 소스 커밋으로 다시 저장할 때 기존 아카이브를
+재사용할 수 있다. 공개 설정을 바로잡아 교체할 때는 새 커밋으로 버전을 저장하고
+로그인이 유지된 브라우저에서 확인한다.
+
 ## Hosting adaptations
 
 - Browser canvas decodes/orients input and resizes to a 2560px maximum edge,
