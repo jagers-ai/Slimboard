@@ -39,8 +39,10 @@ Git에서 제외된 `.env.local`에 연결한다. 이 값이 없으면 서버에
   It stores the existing metadata-only record without photos, note content,
   prompts, account identifiers or keys. No public route exposes this table.
 - Model gpt-6.2-sol, medium reasoning, Ultrafast tier, no automatic paid retries.
-- Existing Supabase notes, ownership filters, encrypted recovery receipts,
-  request limits and deletion queue remain in place.
+- Existing Supabase notes, ownership filters, encrypted recovery receipts and
+  deletion queue remain in place. The per-account analysis caps (10 per hour,
+  30 per day) were removed on purpose on 2026-11-20 (`b38a3cc`); per-note
+  duplicate-run protection and attempt logging remain.
 
 ## Verification
 
