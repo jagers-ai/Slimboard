@@ -39,15 +39,21 @@ export function readTokenUsage(value: unknown): TokenUsage | null {
   };
 }
 
-export function estimateUsageCost(usage: TokenUsage | null, model: string | null, tier: string | null) {
+export function estimateUsageCost(usage: TokenUsage | null, model: string | null, tier: string | null, requestTime = Date.now()) {
   const terra = model !== null && /^gpt-6\.1-terra(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
+  const sol62 = model !== null && /^gpt-6\.2-sol(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
   const base = terra
     ? { input: 1, cached: 0.05, output: 5 }
-    : model && /^gpt-6\.1-sol(?:-\d{4}-\d{2}-\d{2})?$/.test(model)
+    : sol62 || (model && /^gpt-6\.1-sol(?:-\d{4}-\d{2}-\d{2})?$/.test(model))
     ? { input: 2, cached: 0.1, output: 10 }
     : model && /^gpt-6-astra(?:-\d{4}-\d{2}-\d{2})?$/.test(model)
       ? { input: 10, cached: 1, output: 50 } : null;
-  const factor = tier === "default" ? 1 : tier === "flex" ? 0.5 : tier === "priority" || tier === "fast" ? 2 : tier === "ultrafast" && !terra ? 6 : null;
+  // 2027-03-01 00:00 Pacific is 08:00 UTC. Use the request's date for replayed records.
+  const ultrafastFactor = sol62 && requestTime < Date.UTC(2027, 2, 1, 8) ? 3 : 6;
+  const multipliers: Record<string, number | null> = {
+    default: 1, flex: 0.5, priority: 2, fast: 2, ultrafast: terra ? null : ultrafastFactor,
+  };
+  const factor = tier && Object.hasOwn(multipliers, tier) ? multipliers[tier] : null;
   if (!usage || !base || factor === null) return null;
   const longContext = usage.inputTokens > 272_000;
   const rates = {
@@ -65,7 +71,7 @@ export function estimateUsageCost(usage: TokenUsage | null, model: string | null
   const round = (n: number) => Math.round(n * 1e9) / 1e9;
   const usd = round(inputUsd + outputUsd);
   return {
-    kind: "usage-based-estimate" as const, pricingDate: terra ? "2026-11-18" : PRICING_DATE, ratesPerMillionUsd: rates,
+    kind: "usage-based-estimate" as const, pricingDate: sol62 ? "2026-11-20" : terra ? "2026-11-18" : PRICING_DATE, ratesPerMillionUsd: rates,
     inputUsd: round(inputUsd), outputUsd: round(outputUsd), usd,
     krwReference: Math.round(usd * USD_KRW_REFERENCE * 100) / 100,
     usdKrwReference: USD_KRW_REFERENCE, excludesTax: true,

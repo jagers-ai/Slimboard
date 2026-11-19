@@ -50,6 +50,14 @@ test("Terra prices Standard and Fast token usage but leaves unsupported Ultrafas
   assert.equal(estimateUsageCost(usage, "gpt-6.1-terra", "ultrafast"), null);
 });
 
+test("Sol 6.2 Ultrafast uses the rate in effect when the request started", () => {
+  const usage = readTokenUsage({ input_tokens: 1000, output_tokens: 100, total_tokens: 1100 });
+  const transition = Date.UTC(2027, 2, 1, 8);
+  assert.equal(estimateUsageCost(usage, "gpt-6.2-sol", "ultrafast", transition - 1).usd, 0.009);
+  assert.equal(estimateUsageCost(usage, "gpt-6.2-sol", "ultrafast", transition).usd, 0.018);
+  assert.equal(estimateUsageCost(usage, "gpt-6.2-sol", "default", transition - 1).usd, 0.003);
+});
+
 test("missing usage stays unknown and inconsistent token counts are rejected", () => {
   for (const u of [undefined, null, {}, { ...raw, input_tokens: -1 }, { ...raw, output_tokens: 1.2 },
     { ...raw, total_tokens: 1 }, { ...raw, output_tokens_details: { reasoning_tokens: 2000 } },

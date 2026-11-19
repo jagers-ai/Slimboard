@@ -21,8 +21,8 @@ export default {async fetch(){
       const request=new Request(url,options);
       if(request.redirect!=='manual') throw Error('Unexpected redirect policy');
       const sent=JSON.parse(options.body);
-      if(sent.model!=='gpt-6.1-terra'||sent.reasoning.effort!=='low') throw Error('Unexpected OCR model or effort');
-      return Response.json({status:'completed',model:'gpt-6.1-terra',service_tier:'default',
+      if(sent.model!=='gpt-6.2-sol'||sent.reasoning.effort!=='medium'||sent.service_tier!=='ultrafast') throw Error('Unexpected OCR model or effort');
+      return Response.json({status:'completed',model:'gpt-6.2-sol',service_tier:'ultrafast',
         usage:{input_tokens:20,output_tokens:10,total_tokens:30},
         output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({title:'test',rawText:'test',summary:'test',keywords:['test']})}]}]});
     }});

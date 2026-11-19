@@ -2,8 +2,8 @@ import type { WhiteboardAnalysis } from "./types";
 import { randomUUID } from "node:crypto";
 import { appendUsageRecord, estimateUsageCost, readTokenUsage, type UsageRecord } from "./openai-usage.ts";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-6.1-terra";
-export const DEFAULT_REASONING_EFFORT = "low";
+export const DEFAULT_OPENAI_MODEL = "gpt-6.2-sol";
+export const DEFAULT_REASONING_EFFORT = "medium";
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -91,8 +91,9 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
   const apiKey = (options.apiKey ?? process.env.OPENAI_API_KEY)?.trim();
   if (!apiKey) throw new OpenAIOcrError("NOT_CONFIGURED", "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요.");
   const model = options.model ?? process.env.SLIMBOARD_OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
+  const serviceTier = process.env.SLIMBOARD_OPENAI_SERVICE_TIER ?? (model === DEFAULT_OPENAI_MODEL ? "ultrafast" : "default");
   const reasoningEffort = options.reasoningEffort ?? process.env.SLIMBOARD_OPENAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT;
-  if (!["low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) {
+  if (!["default", "fast", "ultrafast"].includes(serviceTier) || !["low", "medium", "high", "xhigh", "max"].includes(reasoningEffort)) {
     throw new OpenAIOcrError("INVALID_CONFIG", "지금은 노트를 만들 수 없어요. 잠시 후 다시 시도해주세요.");
   }
   const started = performance.now();
@@ -114,7 +115,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
       signal: controller.signal,
       body: JSON.stringify({
         model,
-        service_tier: "default",
+        service_tier: serviceTier,
         reasoning: { effort: reasoningEffort },
         instructions: prompt,
         input: [{ role: "user", content: [
@@ -145,7 +146,7 @@ export async function analyzeWithOpenAI(buffer: Buffer, mimeType: string, option
       record.responseModel = safeModel(payload.model);
       record.serviceTier = typeof payload.service_tier === "string" && ["default", "flex", "priority", "fast", "ultrafast"].includes(payload.service_tier) ? payload.service_tier : null;
       record.responseId = typeof payload.id === "string" && /^resp_[a-zA-Z0-9_-]{1,180}$/.test(payload.id) ? payload.id : null;
-      record.cost = estimateUsageCost(record.usage, record.responseModel, record.serviceTier);
+      record.cost = estimateUsageCost(record.usage, record.responseModel, record.serviceTier, Date.parse(record.timestamp));
     }
     const analysis = parseAnalysis(payload);
     record.status = "completed";

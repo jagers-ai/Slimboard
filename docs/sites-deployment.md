@@ -27,7 +27,7 @@ Local .env.local/.dev.vars and outputs are ignored and never published.
 - AI token/cost accounting uses a private D1 table, not an ephemeral filesystem.
   It stores the existing metadata-only record without photos, note content,
   prompts, account identifiers or keys. No public route exposes this table.
-- Model gpt-6.1-terra, low reasoning, Standard tier, no automatic paid retries.
+- Model gpt-6.2-sol, medium reasoning, Ultrafast tier, no automatic paid retries.
 - Existing Supabase notes, ownership filters, encrypted recovery receipts,
   request limits and deletion queue remain in place.
 

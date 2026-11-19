@@ -1,7 +1,7 @@
 # OpenAI API photo analysis
 
 Both saved notes and the camera lab use the OpenAI Responses API. The default is
-`gpt-6.1-terra` with `low` reasoning. There is no OAuth or Codex CLI
+`gpt-6.2-sol` with `medium` reasoning and the Ultrafast service tier. There is no OAuth or Codex CLI
 login in the app's analysis path.
 
 New analyses use `___` in the transcription for each unreadable span. The
@@ -129,7 +129,7 @@ npm run lab:usage
 npm run lab:usage -- --json
 ```
 
-The request explicitly selects Standard (`service_tier: default`). Cost uses the
+The deployed request uses `SLIMBOARD_OPENAI_SERVICE_TIER=ultrafast`. GPT-6.2 Sol Standard input/output rates are $2/$10 per million tokens. Ultrafast costs 3× Standard through February 28, 2027 (Pacific), then 6×. Cost uses the
 response model and tier. Terra 6.1 Standard rates verified on 2026-11-18 are
 $1 input, $0.05 cached input, $1.25 for 30m cache writes, $2.50 for 12h cache
 writes, and $5 output per million tokens. The existing Sol and Astra rate cards
