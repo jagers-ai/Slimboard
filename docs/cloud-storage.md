@@ -29,8 +29,9 @@ were not changed as part of this work.
 `claim_note_analysis` serializes requests per owner in PostgreSQL, verifies image
 readiness and ownership, and rejects concurrent/uncertain requests. Default
 completed-note retries return the saved result. Explicit reanalysis is a separate
-user action. The initial limits are 10 dispatched attempts/hour and 30/day per
-account, including failed attempts. No model or prompt changes were made.
+user action. The November 20, 2026 migration removes the app's original account
+caps of 10 dispatched attempts per hour and 30 per day. The server still logs
+each dispatched attempt, including failed analyses.
 
 After AI success, the server retries only the conditional DB write once. If both
 writes fail, it returns an encrypted, owner/note/attempt-bound recovery receipt.

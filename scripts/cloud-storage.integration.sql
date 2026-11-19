@@ -29,9 +29,10 @@ begin
   execute 'reset role';
   if visible <> 1 then raise exception 'Owner cannot read note'; end if;
   if has_table_privilege('authenticated','public.whiteboard_notes','UPDATE') then raise exception 'Client can bypass server mutations'; end if;
-  if has_function_privilege('authenticated','public.claim_note_analysis(uuid,uuid,uuid,boolean)','EXECUTE') then raise exception 'Client can bypass analysis rate limit'; end if;
-  insert into public.note_analysis_requests(attempt, owner_user_id) select gen_random_uuid(),a from generate_series(1,9);
-  if public.claim_note_analysis(n,a,gen_random_uuid(),true) <> 'rate_limited' then raise exception 'Hourly rate gate failed'; end if;
+  if has_function_privilege('authenticated','public.claim_note_analysis(uuid,uuid,uuid,boolean)','EXECUTE') then raise exception 'Client can call the server-only analysis claim'; end if;
+  insert into public.note_analysis_requests(attempt, owner_user_id) select gen_random_uuid(),a from generate_series(1,30);
+  if public.claim_note_analysis(n,a,gen_random_uuid(),true) <> 'claimed' then raise exception 'Prior attempts blocked a new analysis'; end if;
+  if (select count(*) from public.note_analysis_requests where owner_user_id=a) <> 32 then raise exception 'Analysis attempt was not logged'; end if;
   delete from public.whiteboard_notes where id=n;
   if (select cardinality(paths) from public.note_image_cleanup where note_id=n) <> 1 then raise exception 'Single-image cleanup queue failed'; end if;
   insert into public.whiteboard_notes(id,workspace_id,owner_user_id,original_image_path,analysis_image_path)
