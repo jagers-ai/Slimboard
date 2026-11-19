@@ -55,7 +55,7 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
       clearDraft();
       setSaved(savedNote);
       setMessage("저장했어요.");
-      if (mounted.current) router.refresh();
+      if (mounted.current) router.push("/");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 중 문제가 생겼어요.");
     } finally {
