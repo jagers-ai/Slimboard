@@ -1,18 +1,20 @@
 # 다른 Mac에서 이어서 개발하기
 
-기준일: 2026-10-25 (한국 시간). 이 문서를 먼저 읽고 실제 GitHub/Sites 상태를 다시 확인한다.
+기준일: 2026-10-25 (한국 시간). 아래 작업 위치와 공개 버전은 2026-11-20에 갱신했다. 이 문서를 먼저 읽고 실제 GitHub/Sites 상태를 다시 확인한다.
 
 ## 현재 작업 위치
 
 - 저장소: https://github.com/jagers-ai/Slimboard
-- **최신 작업 브랜치: `experiment/chatgpt-sites`**
-- `experiment/chatgpt-plan-ocr`는 Sites 이전의 개발 이력이다. 최신 UI 작업을 그 브랜치에서 시작하지 않는다.
+- **기준 브랜치: `main`.** 2026-11-20에 `design/karrot-style`을 병합해 공개 버전 24의 코드와 그 뒤의 문서 기록을 담았다.
+- 최근 기능 작업은 `design/karrot-style`에서 했다. 이어서 작업하기 전에 `main`과 `design/karrot-style` 중 어느 쪽이 앞서 있는지 확인한다.
+- `experiment/chatgpt-sites`는 2026-10-25 이후 갱신하지 않았고, `experiment/chatgpt-plan-ocr`는 Sites 이전의 개발 이력이다. 두 브랜치에서 새 작업을 시작하지 않는다.
 - 공개 사이트: https://slimboard-jagers.beliandeve.chatgpt.site/
 - Sites 프로젝트 ID: `appgprj_6adca501365c8191a5b295f20cc879e2`
-- 현재 공개 버전: **11**, ChatGPT 로그인 없이 접속 가능. 개인 기록은 Google 로그인 필요.
-- 마지막 기능 변경의 GitHub 커밋: `bf58b8b9777e9573d950647fff7b007e0559c9f7`
-- 같은 기능 상태의 Sites 소스 커밋: `6fa14e91864d2a77f630b339aa6f179e385b35b7`
+- 현재 공개 버전: **24**, ChatGPT 로그인 없이 접속 가능. 개인 기록은 Google 로그인 필요.
+- 마지막 기능 변경의 GitHub 커밋: `b38a3cc21d7207f5921c68a90295c4f9ef2ab6e3`
+- 같은 기능 상태의 Sites 소스 커밋: `cea8f0c9d45d3a69d0863d6f77402405f18b2278`
 - 위 두 해시는 이후 인수인계 문서 커밋을 포함하지 않는 기능 기준점이다.
+- 공개 서비스는 ChatGPT Sites로만 배포한다. GitHub에 연결된 Vercel은 푸시마다 배포를 시도하지만, 2026-11-20 기준 계정 차단(`Account is blocked.`)으로 실패한다. 마지막 Vercel Production 배포는 2026-05-07의 `main`(`23cde99`)이다.
 
 ## 가장 먼저 이어서 할 일: 하단 여백 문제
 
@@ -90,15 +92,15 @@ Android라는 이유만으로 일정 높이를 추가하지 않는다. 48px만 �
 
 1. 기존 폴더가 있다면 `git status`와 브랜치/원격을 먼저 확인하고 사용자 변경을 보존한다.
    `reset --hard`, 강제 checkout, 폴더 덮어쓰기를 하지 않는다.
-2. 최신 `experiment/chatgpt-sites` 브랜치를 받는다. 새 폴더에 복제할 때의 예:
+2. 최신 `main` 브랜치를 받는다. 새 폴더에 복제할 때의 예:
 
    ```sh
-   git clone --branch experiment/chatgpt-sites https://github.com/jagers-ai/Slimboard.git Slimboard
+   git clone --branch main https://github.com/jagers-ai/Slimboard.git Slimboard
    cd Slimboard
    ```
 
-   기존 저장소에서는 변경 사항을 보존한 뒤 fetch하고 해당 브랜치를 안전하게
-   전환/갱신한다. 과거 Mac이 `03abcae`에 머물러 있어도 이력을 초기화하지 않는다.
+   기존 저장소에서는 변경 사항을 보존한 뒤 fetch하고, `main`과 `design/karrot-style` 중
+   앞선 브랜치로 안전하게 전환/갱신한다. 과거 Mac이 `03abcae`에 머물러 있어도 이력을 초기화하지 않는다.
 3. `AGENTS.md`, `DESIGN.md`, 이 문서, `docs/sites-deployment.md`,
    `docs/openai-api.md`, `docs/code-review-2026-10-24.md`, `docs/mobile-testing.md`를 읽는다.
 4. **Node.js 24** 사용 여부를 확인한다. 현재 Sites 브랜치는 Vinext/Workers 기반이다.
@@ -157,7 +159,7 @@ GitHub의 `.env`/로컬 도구 상태를 무작정 복사하지 않는다. 기�
 만들거나 audience를 바꾸지 않는다. 한글 메시지로 먼저 커밋하고 공식 소스
 헬퍼로 빌드/동기화/패키징한 뒤, 정확한 소스 SHA와 아카이브를 저장·배포한다.
 
-GitHub 동기화 시에는 기존 `experiment/chatgpt-sites` HEAD를 확인하고 그 부모를
+GitHub 동기화 시에는 작업 중인 브랜치(현재 `main` 또는 `design/karrot-style`)의 HEAD를 확인하고 그 부모를
 이어가는 일반 커밋을 만든다. Sites의 다른 이력을 강제 push하지 않는다.
 이 Mac에서는 `git commit-tree`로 Sites의 같은 트리를 GitHub 이력에 연결했다.
 다른 Mac에서도 트리와 부모를 확인하고 일반 push의 동시 변경 검사를 유지한다.
