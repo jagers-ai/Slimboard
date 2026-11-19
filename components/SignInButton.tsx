@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogIn } from "lucide-react";
 
 import { useBrowserValue } from "@/hooks/useBrowserValue";
@@ -12,17 +12,31 @@ export function SignInButton() {
   const authFailed = useBrowserValue(() => new URLSearchParams(window.location.search).has("authError"), false);
   const message = failure ?? (authFailed ? "로그인을 완료하지 못했어요. 다시 시도해주세요." : null);
 
+  useEffect(() => {
+    // Back from Google can restore this page from the browser's back/forward
+    // cache with the button still disabled.
+    const reset = (event: PageTransitionEvent) => { if (event.persisted) setIsLoading(false); };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+
   async function signIn() {
     setIsLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    let failed: boolean;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      failed = Boolean(error);
+    } catch {
+      failed = true;
+    }
 
-    if (error) {
+    if (failed) {
       setIsLoading(false);
       setFailure("로그인 연결에 실패했어요. 잠시 뒤 다시 시도해주세요.");
     }

@@ -1,6 +1,6 @@
 "use client";
 import { PhotoZoom } from "@/components/PhotoZoom";
-import { readNoteResponse } from "@/lib/note-api";
+import { errorMessage, readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
@@ -103,7 +103,7 @@ export function CaptureUploader({ userId }: { userId: string }) {
       window.history.replaceState(null, "", `/notes/${noteId}`);
       setResult({ note: payload.note, file: payload.usedUploadedImage ? file : null });
     } catch (cause) {
-      if (mounted.current) setMessage(cause instanceof Error ? cause.message : "연결이 끊겼어요. 사진은 그대로 있으니 다시 시도해 주세요.");
+      if (mounted.current) setMessage(errorMessage(cause, "연결이 끊겼어요. 사진은 그대로 있으니 다시 시도해 주세요."));
     } finally {
       submitting.current = false;
       if (mounted.current) setStage("idle");

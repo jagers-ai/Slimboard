@@ -43,7 +43,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   return (
     <AccountBoundary key={user.id} userId={user.id}><AppFrame active="search" className="search-shell">
       <h1 className="sr-only">노트 검색</h1>
-      <SearchForm initialQuery={q} />
+      {/* Vinext keeps this page mounted when only ?q= changes; the key resets the input. */}
+      <SearchForm key={q} initialQuery={q} />
 
       {q ? <SearchResults notes={notes} query={q} /> : <RecentSearches recentSearches={recentSearches} />}
 

@@ -1,5 +1,5 @@
 "use client";
-import { readNoteResponse } from "@/lib/note-api";
+import { errorMessage, readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -31,8 +31,17 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Vinext keeps earlier screens for the Back button; refresh() drops them so
+  // Back shows the saved note instead of the text from before the edit.
+  function goHome() {
+    router.push("/");
+    router.refresh();
+  }
+
   async function save() {
     if (pending.current) return;
+    // Nothing changed: leave without sending possibly stale text back to the server.
+    if (!dirty) { goHome(); return; }
     pending.current = true;
     setIsSaving(true);
     setMessage(null);
@@ -55,9 +64,9 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
       clearDraft();
       setSaved(savedNote);
       setMessage("저장했어요.");
-      if (mounted.current) router.push("/");
+      if (mounted.current) goHome();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "저장 중 문제가 생겼어요.");
+      setMessage(errorMessage(error, "연결이 끊겼어요. 수정한 내용은 그대로 있으니 다시 저장해 주세요."));
     } finally {
       pending.current = false;
       setIsSaving(false);
@@ -91,7 +100,7 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
       setMessage("노트를 저장했어요.");
       if (mounted.current) router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "사진을 변환하지 못했어요.");
+      setMessage(errorMessage(error, "연결이 끊겨 변환 결과를 확인하지 못했어요. 연결을 확인해 주세요."));
     } finally {
       pending.current = false;
       setIsAnalyzing(false);
@@ -118,9 +127,9 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
       }
 
       clearDraft();
-      if (mounted.current) router.push("/");
+      if (mounted.current) goHome();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "삭제 중 문제가 생겼어요.");
+      setMessage(errorMessage(error, "연결이 끊겨 삭제됐는지 확인하지 못했어요. 홈 목록에서 확인해 주세요."));
       pending.current = false;
       setIsDeleting(false);
     }

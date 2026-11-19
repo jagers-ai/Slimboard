@@ -12,8 +12,13 @@ export function DocumentField({ label, value, onChange, disabled, title = false 
     if (!field) return;
     const resize = () => {
       if (!field.clientWidth) return;
+      // The brief "auto" height shrinks the page scroller, which clamps its
+      // position; restore it so typing in a long note does not jump away.
+      const scroller = field.closest(".app-scroll");
+      const scrollTop = scroller?.scrollTop;
       field.style.height = "auto";
       field.style.height = `${field.scrollHeight}px`;
+      if (scroller && scrollTop !== undefined) scroller.scrollTop = scrollTop;
     };
     resize();
     let animationFrame = 0;

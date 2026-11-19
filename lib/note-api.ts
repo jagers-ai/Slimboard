@@ -12,6 +12,10 @@ function readEditorNote(value: unknown): NoteEditorNote | undefined {
     !Array.isArray(keywords) || !keywords.every(word => typeof word === "string")) return;
   return { id, title, raw_text, summary, keywords, error_message, created_at, status };
 }
+/** fetch() rejects with a browser-specific English TypeError ("Load failed", "Failed to fetch"). */
+export function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && !(error instanceof TypeError) ? error.message : fallback;
+}
 export async function readNoteResponse(response: Response): Promise<NoteResponse> {
   let raw: unknown;
   try { raw = await response.json(); } catch { throw new Error("결과를 확인하지 못했어요. 잠시 후 다시 확인해 주세요."); }
