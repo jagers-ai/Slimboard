@@ -1,0 +1,156 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, FileText, Image as ImageIcon, LoaderCircle } from "lucide-react";
+
+import Link from "@/components/AppLink";
+import { AppFrame } from "@/components/AppFrame";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { GoodnotesExportError, prepareGoodnotesPage, type GoodnotesFailure, type GoodnotesPage } from "@/lib/goodnotes-export";
+
+type Stage =
+  | { name: "preparing" | "empty" | "unfinished" | GoodnotesFailure }
+  | { name: "ready"; page: GoodnotesPage; shareable: boolean };
+
+const messages: Record<Exclude<Stage["name"], "ready">, string> = {
+  preparing: "글씨를 옮기는 중이에요",
+  empty: "사진에서 글씨를 찾지 못했어요.",
+  unfinished: "노트 변환이 끝나면 보낼 수 있어요.",
+  "photo-missing": "이 노트에는 사진이 없어요.",
+  photo: "사진을 불러오지 못했어요.",
+  ink: "글씨를 옮기지 못했어요.",
+};
+
+/** Prepares the handwriting as soon as it opens, so one tap can open the share sheet. */
+export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
+  noteId: string; title: string; photoUrl: string | null; completed: boolean;
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [progress, setProgress] = useState<Stage>({ name: "preparing" });
+  const stage: Stage = !photoUrl ? { name: "photo-missing" } : !completed ? { name: "unfinished" } : progress;
+
+  useEffect(() => {
+    if (!photoUrl || !completed) return;
+    const abort = new AbortController();
+    prepareGoodnotesPage({ photoUrl, title, signal: abort.signal }).then(page => {
+      if (!abort.signal.aborted) setProgress(page ? { name: "ready", page, shareable: canShare(page.file) } : { name: "empty" });
+    }, error => {
+      if (abort.signal.aborted) return;
+      console.error("Goodnotes export failed", error, error instanceof Error ? error.cause : undefined);
+      setProgress({ name: error instanceof GoodnotesExportError ? error.failure : "ink" });
+    });
+    return () => abort.abort();
+  }, [attempt, completed, photoUrl, title]);
+
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.closest(".app-scroll")?.scrollTo({ top: 0 });
+  }, [stage.name]);
+
+  const share = useShare();
+  const saveUrl = useObjectUrl(stage.name === "ready" && !stage.shareable ? stage.page.file : null);
+  const noteUrl = `/notes/${noteId}`;
+
+  function retry() {
+    setProgress({ name: "preparing" });
+    setAttempt(current => current + 1);
+  }
+
+  let action;
+  if (stage.name === "preparing") {
+    action = <button className="button primary full-width" type="button" disabled>준비 중</button>;
+  } else if (stage.name === "photo" || stage.name === "ink") {
+    action = <button className="button primary full-width" type="button" onClick={retry}>다시 시도</button>;
+  } else if (stage.name !== "ready") {
+    action = <Link className="button primary full-width" href={noteUrl}>노트로 돌아가기</Link>;
+  } else if (stage.shareable) {
+    const { page } = stage;
+    action = <button className="button primary full-width" type="button" aria-disabled={share.busy || undefined}
+      onClick={() => void share.send(page)}>굿노트로 보내기</button>;
+  } else {
+    action = <a className="button primary full-width" href={saveUrl} download={stage.page.file.name}>{stage.page.saveLabel}</a>;
+  }
+
+  const footer = <div className="goodnotes-actions">
+    <div role="status">{share.failed ? <p className="inline-message">보내지 못했어요. 다시 눌러 주세요.</p> : null}</div>
+    {action}
+  </div>;
+
+  return <AppFrame active="home" className="goodnotes-shell" footer={footer}>
+    <header className="screen-header">
+      <Link className="text-button icon-button" href={noteUrl} aria-label="노트로 돌아가기"><ChevronLeft size={24} aria-hidden="true" /></Link>
+      <h1 ref={headingRef} tabIndex={-1}>굿노트로 보내기</h1>
+      <span aria-hidden="true" />
+    </header>
+    <section className={stage.name === "ready" ? "goodnotes-export" : "capture-placeholder goodnotes-state"} aria-busy={stage.name === "preparing"}>
+      {stage.name === "ready" ? <InkPaper preview={stage.page.preview} />
+        : stage.name === "preparing" ? <LoaderCircle size={40} className="spinner" aria-hidden="true" />
+        : stage.name === "photo" || stage.name === "photo-missing" ? <ImageIcon size={40} aria-hidden="true" />
+        : <FileText size={40} aria-hidden="true" />}
+      <p className={stage.name === "ready" ? "capture-hint" : undefined} role="status">
+        {stage.name !== "ready" ? messages[stage.name]
+          : stage.shareable ? "공유 화면에서 Goodnotes를 골라 주세요. 안 보이면 더 보기에 있어요."
+          : "저장한 파일을 굿노트에서 열어 주세요."}
+      </p>
+    </section>
+  </AppFrame>;
+}
+
+function InkPaper({ preview }: { preview: GoodnotesPage["preview"] }) {
+  return <svg className="goodnotes-paper" role="img" aria-label="사진에서 옮긴 글씨"
+    viewBox={`0 0 ${preview.width} ${preview.height}`}
+    style={{ "--paper-ratio": preview.width / preview.height } as React.CSSProperties}>
+    {preview.paths.map((path, index) => <path key={index} d={path.d} fill="none" stroke={path.color}
+      strokeWidth={path.width} strokeLinecap="round" strokeLinejoin="round" />)}
+  </svg>;
+}
+
+function canShare(file: File) {
+  try {
+    return typeof navigator.share === "function" && navigator.canShare?.({ files: [file] }) === true;
+  } catch {
+    return false;
+  }
+}
+
+function useShare() {
+  const running = useRef(0);
+  const sequence = useRef(0);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    // Some iOS versions never settle share() after switching to the other app.
+    const release = () => {
+      if (document.visibilityState !== "visible") return;
+      running.current = 0;
+      setBusy(false);
+    };
+    document.addEventListener("visibilitychange", release);
+    return () => document.removeEventListener("visibilitychange", release);
+  }, []);
+
+  // iOS opens the share sheet only straight from the tap: nothing may be awaited before share().
+  async function send({ file, title }: GoodnotesPage) {
+    if (running.current) return;
+    const id = running.current = ++sequence.current;
+    setBusy(true);
+    setFailed(false);
+    try {
+      await navigator.share({ files: [file], title });
+    } catch (error) {
+      if (running.current === id && !(error instanceof DOMException && error.name === "AbortError")) {
+        console.error("Share failed", error);
+        setFailed(true);
+      }
+    } finally {
+      if (running.current === id) {
+        running.current = 0;
+        setBusy(false);
+      }
+    }
+  }
+
+  return { busy, failed, send };
+}

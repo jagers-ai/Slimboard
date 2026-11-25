@@ -3,7 +3,7 @@ import { errorMessage, readNoteResponse } from "@/lib/note-api";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Download, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronLeft, Download, LoaderCircle, RefreshCw, Share, Trash2 } from "lucide-react";
 
 import Link from "@/components/AppLink";
 import { AppFrame } from "@/components/AppFrame";
@@ -157,6 +157,10 @@ export function NoteEditor({ note, userId, photoUrl, previewUrl }: { note: NoteE
           <Link className="hero-button" href="/" aria-label="홈으로"><ChevronLeft size={24} aria-hidden="true" /></Link>
           {downloadUrl ? <a className="hero-button" href={downloadUrl} download aria-label="사진 다운로드"><Download size={20} aria-hidden="true" /></a> : null}
         </>}
+        photoActions={note.status === "completed" ? <Link className="text-button" href={`/notes/${note.id}/goodnotes`}
+          aria-disabled={busy || undefined} onClick={event => { if (busy) event.preventDefault(); }}>
+          <Share size={18} aria-hidden="true" />굿노트로 보내기
+        </Link> : null}
         titleContent={<DocumentField label="제목" title value={title} onChange={setTitle} disabled={locked} />}
         rawContent={<DocumentField label="보드 내용" value={rawText} onChange={setRawText} disabled={locked} />}
         summaryContent={<DocumentField label="AI 요약" value={summary} onChange={setSummary} disabled={locked} />}

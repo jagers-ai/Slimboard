@@ -18,10 +18,12 @@ type NoteDocumentProps = {
   downloadUrl?: string;
   /** Round buttons laid over the top of the photo (back, download). */
   heroActions?: ReactNode;
+  /** Quiet row right under the photo (send to Goodnotes). */
+  photoActions?: ReactNode;
 };
 
 /** Shared reading view; safe for both server-rendered saved notes and the client lab. */
-export function NoteDocument({ analysis, createdAt, photoUrl, includeTime = true, headingRef, status, children, titleContent, rawContent, summaryContent, downloadUrl, heroActions }: NoteDocumentProps) {
+export function NoteDocument({ analysis, createdAt, photoUrl, includeTime = true, headingRef, status, children, titleContent, rawContent, summaryContent, downloadUrl, heroActions, photoActions }: NoteDocumentProps) {
   return (
     <article className="notebook-document" aria-labelledby="analysis-title">
       {photoUrl ? (
@@ -30,6 +32,7 @@ export function NoteDocument({ analysis, createdAt, photoUrl, includeTime = true
           {heroActions ? <div className="note-hero-actions">{heroActions}</div> : null}
         </div>
       ) : heroActions ? <div className="note-hero-actions is-plain">{heroActions}</div> : null}
+      {photoUrl && photoActions ? <div className="photo-download-row">{photoActions}</div> : null}
       <p className="note-meta"><time dateTime={createdAt}>{formatNoteDate(createdAt, includeTime)}</time> · AI 정리</p>
       <h1 id="analysis-title" ref={headingRef} tabIndex={-1}>{titleContent ?? analysis.title}</h1>
       {status ? <div className="note-status">{status}</div> : null}
