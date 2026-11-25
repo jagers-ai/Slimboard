@@ -367,3 +367,74 @@ test('긴 변 1600px 사진을 몇 초 안에 처리한다', () => {
   assert.ok(performance.now() - start < 8000);
   assert.ok(strokes.length >= 60);
 });
+
+// 작은 글자: 단위 상자 안의 선분 목록을 (x, y)에 높이 h로 그린다.
+const SMALL = {
+  나: [[0.05, 0.15, 0.05, 0.8], [0.05, 0.8, 0.5, 0.8], [0.72, 0, 0.72, 1], [0.72, 0.5, 0.95, 0.5]],
+  다: [[0.05, 0.18, 0.5, 0.18], [0.05, 0.18, 0.05, 0.8], [0.05, 0.8, 0.52, 0.8], [0.72, 0, 0.72, 1], [0.72, 0.5, 0.95, 0.5]],
+  저: [[0.02, 0.12, 0.45, 0.12], [0.45, 0.12, 0.05, 0.85], [0.26, 0.5, 0.5, 0.85], [0.85, 0, 0.85, 1], [0.62, 0.5, 0.85, 0.5]],
+};
+
+function smallText(board, x, y, h, width, color = 'black') {
+  const branches = [];
+  for (const [i, ch] of ['나', '다', '저'].entries()) {
+    const ox = x + i * 1.3 * h;
+    for (const [x0, y0, x1, y1] of SMALL[ch]) board.line(ox + x0 * h, y + y0 * h, ox + x1 * h, y + y1 * h, width, color);
+    // 'ㅏ', 'ㅓ'의 짧은 가지 가운데 점과 그 방향
+    const [x0, y0, x1, y1] = SMALL[ch].at(-1);
+    branches.push({ ch, x: ox + ((x0 + x1) / 2) * h, y: y + ((y0 + y1) / 2) * h });
+  }
+  return branches;
+}
+
+// (x, y) 근처를 가로로 지나는 선분이 있는지
+function horizontalNear(strokes, x, y, reach) {
+  return strokes.some((s) =>
+    s.points.slice(1).some(([bx, by], i) => {
+      const [ax, ay] = s.points[i];
+      const l = Math.hypot(bx - ax, by - ay);
+      if (l < 1 || Math.abs(by - ay) / l > 0.5) return false;
+      return distance([{ points: [[ax, ay], [bx, by]] }], x, y) <= reach;
+    }),
+  );
+}
+
+test('작은 글씨(높이 28px, 획 3px)에서 ㅏ, ㅓ의 짧은 가지가 남는다', () => {
+  for (const [light, color] of [['flat', 'black'], ['left', [0.55, 0.55, 0.58]]]) {
+    const board = new Board(400, 120, { light, noise: 2, seed: 5 });
+    const branches = smallText(board, 40, 40, 28, 3, color);
+    const result = extractInkStrokes(board.image());
+    for (const b of branches) assert.ok(horizontalNear(result.strokes, b.x, b.y, 2), `${light} ${b.ch}`);
+  }
+});
+
+test('작은 ㅁ과 ㅇ의 속공간이 메워지지 않는다', () => {
+  const board = new Board(300, 120, { noise: 2 });
+  board.line(40, 40, 40, 58, 3).line(40, 40, 58, 40, 3).line(58, 40, 58, 58, 3).line(40, 58, 58, 58, 3).ring(110, 50, 8, 3);
+  const result = extractInkStrokes(board.image());
+  assert.ok(distance(result.strokes, 49, 49) > 6);
+  assert.ok(distance(result.strokes, 110, 50) > 5);
+});
+
+test('얇은 색 글씨의 색을 유지한다', () => {
+  const board = new Board(400, 160, { noise: 2 });
+  smallText(board, 30, 20, 30, 2.5, 'red');
+  smallText(board, 30, 90, 30, 2.5, 'blue');
+  const result = extractInkStrokes(board.image());
+  const long = result.strokes.filter((s) => length(s.points) > 10);
+  assert.ok(long.length > 10);
+  for (const s of long) assert.equal(s.color, s.points[0][1] < 70 ? 'red' : 'blue');
+});
+
+test('보드 옆의 어두운 벽과 벽 틈은 획이 아니고 글씨는 남는다', () => {
+  const board = new Board(1000, 700, { noise: 3 });
+  const wall = [0.62, 0.56, 0.46];
+  board.ink((x) => (x > 820 ? 0 : 99), 0.5, wall);
+  board.line(900, 0, 900, 700, 6, [0.6, 0.6, 0.6]).line(820, 300, 1000, 320, 4, [0.7, 0.7, 0.7]);
+  const branches = [...smallText(board, 100, 150, 60, 5), ...smallText(board, 400, 300, 60, 5, 'blue')];
+  board.line(100, 500, 600, 520, 5);
+  const result = extractInkStrokes(board.image());
+  for (const b of branches) assert.ok(horizontalNear(result.strokes, b.x, b.y, 2), b.ch);
+  assert.ok(distance(result.strokes, 350, 510) < 1.5);
+  for (const s of result.strokes) for (const [x] of s.points) assert.ok(x < 800, `벽 쪽 획 x=${x}`);
+});
