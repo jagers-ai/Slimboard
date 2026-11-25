@@ -14,11 +14,12 @@
  *    대비의 잡음 수준을 재서 임계를 정하고 강약 두 임계(히스테리시스)로 이진화한다.
  * 3. 작은 연결 요소를 지우고 획 안의 작은 구멍(반사광)을 메운다.
  * 4. 거리 변환으로 펜보다 훨씬 굵은 부분(테두리, 그림자, 자석, 벽)을 깎아 낸다.
- * 5. Zhang-Suen 골격화 후 계단 픽셀을 지워 1픽셀 골격을 만든다.
+ * 5. Guo-Hall 골격화 후 계단 픽셀을 지워 1픽셀 골격을 만든다.
  * 6. 골격 그래프에서 잔가지를 지우고 가까운 분기점을 합친 뒤, 분기점에서 방향이 가장 곧게
  *    이어지는 가지끼리 이어 붙여 획을 만든다.
  * 7. 가볍게 평활한 뒤 Ramer-Douglas-Peucker로 점 수를 줄인다.
- * 8. 획 굵기는 골격 위 거리 변환 값의 중앙값, 색은 배경으로 나눈 투과율의 흡광도로 정한다.
+ * 8. 획 굵기는 획에 수직인 단면의 반값 폭으로, 색은 배경으로 나눈 투과율의 흡광도로 정한다.
+ *    지운 잔상, 종이 가장자리, 보드 테두리, 잡음 점처럼 글씨가 아닌 획을 버린다.
  * 9. 획 수와 점 수 상한을 넘으면 짧은 획부터 버린다.
  */
 
@@ -49,7 +50,7 @@ export interface InkStrokeOptions {
   minStrokeLength?: number;
   /** 단순화 허용 오차(입력 px). 기본은 처리 해상도 0.6px. */
   simplifyTolerance?: number;
-  /** 펜 획으로 인정하는 최대 굵기(입력 px). 더 굵은 덩어리는 잉크가 아닌 것으로 본다. 기본은 처리 해상도 긴 변의 1.4%. */
+  /** 펜 획으로 인정하는 최대 굵기(입력 px). 더 굵은 덩어리는 잉크가 아닌 것으로 본다. 기본은 처리 해상도 긴 변의 1.4%(최소 18px). */
   maxStrokeWidth?: number;
   /** 이보다 면적이 작은 잉크 조각은 잡음으로 본다(입력 px²). 기본은 처리 해상도 8px². */
   minComponentArea?: number;
@@ -101,50 +102,69 @@ interface Downsampled {
   lum: Float32Array;
 }
 
+/** 면적 가중 평균으로 줄인다. 비율이 정수가 아니어도 획 굵기가 들쭉날쭉해지지 않는다. */
 function downsample(src: ArrayLike<number>, sw: number, sh: number, w: number, h: number): Downsampled {
   const rgb = new Uint8Array(w * h * 3);
   const lum = new Float32Array(w * h);
-  const x0 = new Int32Array(w);
-  const x1 = new Int32Array(w);
-  for (let i = 0; i < w; i++) {
-    x0[i] = Math.floor((i * sw) / w);
-    x1[i] = Math.max(x0[i] + 1, Math.floor(((i + 1) * sw) / w));
-  }
+  const stepX = sw / w;
+  const stepY = sh / h;
+  const line = new Float64Array(w * 3);
   const acc = new Float64Array(w * 3);
-  for (let j = 0; j < h; j++) {
-    const y0 = Math.floor((j * sh) / h);
-    const y1 = Math.max(y0 + 1, Math.floor(((j + 1) * sh) / h));
-    acc.fill(0);
-    for (let y = y0; y < y1; y++) {
-      const row = y * sw * 4;
-      for (let i = 0; i < w; i++) {
-        let r = 0;
-        let g = 0;
-        let b = 0;
-        for (let x = x0[i], e = x1[i]; x < e; x++) {
-          const o = row + x * 4;
-          r += src[o];
-          g += src[o + 1];
-          b += src[o + 2];
-        }
-        acc[i * 3] += r;
-        acc[i * 3 + 1] += g;
-        acc[i * 3 + 2] += b;
-      }
-    }
-    const rows = y1 - y0;
+  const put = (j: number): void => {
+    const norm = 1 / (stepX * stepY);
     for (let i = 0; i < w; i++) {
-      const n = rows * (x1[i] - x0[i]);
-      const r = acc[i * 3] / n;
-      const g = acc[i * 3 + 1] / n;
-      const b = acc[i * 3 + 2] / n;
+      const r = acc[i * 3] * norm;
+      const g = acc[i * 3 + 1] * norm;
+      const b = acc[i * 3 + 2] * norm;
       const o = (j * w + i) * 3;
-      rgb[o] = r + 0.5;
-      rgb[o + 1] = g + 0.5;
-      rgb[o + 2] = b + 0.5;
+      rgb[o] = Math.min(255, r + 0.5);
+      rgb[o + 1] = Math.min(255, g + 0.5);
+      rgb[o + 2] = Math.min(255, b + 0.5);
       lum[j * w + i] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
+    acc.fill(0);
+  };
+  let j = 0;
+  for (let y = 0; y < sh; y++) {
+    // 가로: 이 행을 w칸으로 누적
+    line.fill(0);
+    let i = 0;
+    let edge = stepX;
+    let o = y * sw * 4;
+    for (let x = 0; x < sw; x++, o += 4) {
+      const k = i * 3;
+      if (x + 1 <= edge || i === w - 1) {
+        line[k] += src[o];
+        line[k + 1] += src[o + 1];
+        line[k + 2] += src[o + 2];
+        if (x + 1 === edge && i < w - 1) {
+          i++;
+          edge = (i + 1) * stepX;
+        }
+      } else {
+        const part = edge - x;
+        line[k] += src[o] * part;
+        line[k + 1] += src[o + 1] * part;
+        line[k + 2] += src[o + 2] * part;
+        line[k + 3] += src[o] * (1 - part);
+        line[k + 4] += src[o + 1] * (1 - part);
+        line[k + 5] += src[o + 2] * (1 - part);
+        i++;
+        edge = (i + 1) * stepX;
+      }
+    }
+    // 세로
+    const bottom = (j + 1) * stepY;
+    const here = j === h - 1 ? 1 : Math.min(1, bottom - y);
+    for (let k = 0; k < line.length; k++) acc[k] += line[k] * here;
+    if (y + 1 >= bottom && j < h - 1) {
+      put(j);
+      j++;
+      const rest = 1 - here;
+      if (rest > 0) for (let k = 0; k < line.length; k++) acc[k] += line[k] * rest;
+    }
   }
+  put(h - 1);
   return { w, h, rgb, lum };
 }
 
@@ -305,15 +325,16 @@ function sampleGrid(grid: Float32Array, bg: Background, x: number, y: number): n
 }
 
 /** 배경 대비 어두운 비율(잉크 대비)을 구하고 [1,2,1] 커널로 살짝 흐린다. */
-function inkContrastMap(img: Downsampled, bg: Background): Float32Array {
+function inkContrastMap(img: Downsampled, bg: Background): { raw: Float32Array; smooth: Float32Array } {
   const { w, h, lum } = img;
-  const d = new Float32Array(w * h);
+  const raw = new Float32Array(w * h);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const b = Math.max(8, sampleGrid(bg.lum, bg, x, y));
-      d[y * w + x] = (b - lum[y * w + x]) / b;
+      raw[y * w + x] = (b - lum[y * w + x]) / b;
     }
   }
+  const d = new Float32Array(raw);
   const tmp = new Float32Array(w * h);
   for (let y = 0; y < h; y++) {
     const row = y * w;
@@ -331,7 +352,7 @@ function inkContrastMap(img: Downsampled, bg: Background): Float32Array {
       d[row + x] = (tmp[up + x] + 2 * tmp[row + x] + tmp[dn + x]) * 0.25;
     }
   }
-  return d;
+  return { raw, smooth: d };
 }
 
 /** 반경 r 안의 최댓값(정사각 창, 가로와 세로로 나눠 계산). */
@@ -512,7 +533,11 @@ function invert(mask: Uint8Array): Uint8Array {
 // ---------------------------------------------------------------------------
 // 5. 골격화
 
-function thinZhangSuen(sk: Uint8Array, W: number): void {
+/**
+ * Guo-Hall 골격화. Zhang-Suen은 두세 픽셀 굵기의 대각선 획과 획 끝을 통째로 깎아 먹어서
+ * 작은 글자의 획이 사라지므로 쓰지 않는다.
+ */
+function thin(sk: Uint8Array, W: number): void {
   let list: number[] = [];
   for (let i = 0; i < sk.length; i++) if (sk[i]) list.push(i);
   const del: number[] = [];
@@ -531,26 +556,14 @@ function thinZhangSuen(sk: Uint8Array, W: number): void {
         const p7 = sk[i + W - 1];
         const p8 = sk[i - 1];
         const p9 = sk[i - W - 1];
-        const b = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
-        if (b < 2 || b > 6) continue;
-        const a =
-          (p2 < p3 ? 1 : 0) +
-          (p3 < p4 ? 1 : 0) +
-          (p4 < p5 ? 1 : 0) +
-          (p5 < p6 ? 1 : 0) +
-          (p6 < p7 ? 1 : 0) +
-          (p7 < p8 ? 1 : 0) +
-          (p8 < p9 ? 1 : 0) +
-          (p9 < p2 ? 1 : 0);
-        if (a !== 1) continue;
-        if (step === 0) {
-          if (p2 && p4 && p6) continue;
-          if (p4 && p6 && p8) continue;
-        } else {
-          if (p2 && p4 && p8) continue;
-          if (p2 && p6 && p8) continue;
-        }
-        del.push(i);
+        const c = ((p2 ^ 1) & (p3 | p4)) + ((p4 ^ 1) & (p5 | p6)) + ((p6 ^ 1) & (p7 | p8)) + ((p8 ^ 1) & (p9 | p2));
+        if (c !== 1) continue;
+        const n1 = (p9 | p2) + (p3 | p4) + (p5 | p6) + (p7 | p8);
+        const n2 = (p2 | p3) + (p4 | p5) + (p6 | p7) + (p8 | p9);
+        const n = n1 < n2 ? n1 : n2;
+        if (n < 2 || n > 3) continue;
+        const keep = step === 0 ? (p6 | p7 | (p9 ^ 1)) & p8 : (p2 | p3 | (p5 ^ 1)) & p4;
+        if (!keep) del.push(i);
       }
       for (let k = 0; k < del.length; k++) sk[del[k]] = 0;
       if (del.length) changed = true;
@@ -763,7 +776,10 @@ function traceSkeleton(sk: Uint8Array, W: number, dist2: Float32Array): Chain[] 
       const jb = isJunction[gb];
       if (ja && jb) {
         // 굵은 교차점은 골격에서 두 분기점으로 갈라진다. 짧게 이어진 둘은 한 점으로 본다.
-        if (len <= Math.max(nodeRadius(e.a), nodeRadius(e.b)) + 1) {
+        // 두 원이 겹칠 만큼 가까울 때만 합쳐야 ㅁ, ㅍ의 짧은 변이 살아남는다.
+        const pa = xy(e.px[0]);
+        const pb = xy(e.px[len - 1]);
+        if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) <= nodeRadius(e.a) + nodeRadius(e.b) + 1 && len <= 2 * (nodeRadius(e.a) + nodeRadius(e.b)) + 2) {
           group[gb] = ga;
           for (const p of e.px) nodePixels[e.a].push(p);
           e.removed = true;
@@ -781,7 +797,7 @@ function traceSkeleton(sk: Uint8Array, W: number, dist2: Float32Array): Chain[] 
       const [tx, ty] = xy(tip);
       const [jx, jy] = xy(root);
       const r = radiusAt(root);
-      if (Math.hypot(tx - jx, ty - jy) + radiusAt(tip) - r < 0.6 * r + 1.5) {
+      if (Math.hypot(tx - jx, ty - jy) + radiusAt(tip) - r < 0.5 * r + 0.7) {
         e.removed = true;
         degree[find(junction)]--;
         changed = true;
@@ -1008,6 +1024,77 @@ function simplifyRing(pts: Pt[], tol: number): Pt[] {
   return a.concat(b.slice(1));
 }
 
+/**
+ * 획 굵기: 골격에 수직인 방향으로 대비가 중심값의 절반이 되는 두 지점 사이 거리(처리 px)를 재고 중앙값을 낸다.
+ * 축소하면서 가장자리가 부드러워져도 반값 폭은 거의 그대로라, 얇은 획도 굵은 획도 이진 마스크보다 정확하다.
+ */
+function strokeWidth(px: number[], W: number, raw: Float32Array, pw: number, ph: number, radius: number): number | null {
+  const sample = (x: number, y: number): number => {
+    const ix = Math.floor(x - 0.5);
+    const iy = Math.floor(y - 0.5);
+    if (ix < 0 || iy < 0 || ix >= pw - 1 || iy >= ph - 1) return 0;
+    const tx = x - 0.5 - ix;
+    const ty = y - 0.5 - iy;
+    const k = iy * pw + ix;
+    return (raw[k] * (1 - tx) + raw[k + 1] * tx) * (1 - ty) + (raw[k + pw] * (1 - tx) + raw[k + pw + 1] * tx) * ty;
+  };
+  const n = px.length;
+  const at = (k: number): Pt => [(px[k] % W) - 0.5, Math.floor(px[k] / W) - 0.5];
+  const limit = Math.max(4, radius * 2 + 3);
+  const span = Math.max(2, Math.min(5, Math.round(radius)));
+  const widths: number[] = [];
+  const stride = Math.max(1, Math.floor(n / 16));
+  for (let k = span; k < n - span; k += stride) {
+    const [x, y] = at(k);
+    const a = at(k - span);
+    const b = at(k + span);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l = Math.hypot(dx, dy);
+    if (l < 1) continue;
+    const nx = -dy / l;
+    const ny = dx / l;
+    // 골격이 반 픽셀쯤 어긋나도 되도록 중심 둘레의 최댓값을 봉우리로 삼는다.
+    let top = 0;
+    let shift = 0;
+    for (let o = -1; o <= 1; o += 0.5) {
+      const v = sample(x + nx * o, y + ny * o);
+      if (v > top) {
+        top = v;
+        shift = o;
+      }
+    }
+    const half = top * 0.5;
+    let total = 0;
+    for (const dir of [-1, 1]) {
+      let prev = top;
+      let t = 0;
+      let found = -1;
+      for (; t <= limit; t += 0.25) {
+        const v = sample(x + nx * (shift + dir * t), y + ny * (shift + dir * t));
+        if (v < half) {
+          found = t - 0.25 + (0.25 * (prev - half)) / Math.max(1e-6, prev - v);
+          break;
+        }
+        prev = v;
+      }
+      if (found < 0) {
+        total = -1;
+        break;
+      }
+      total += Math.max(0, found);
+    }
+    // 교차점이나 붙은 획에서는 반값 지점이 없거나 비정상적으로 멀다.
+    if (total > 0 && total < radius * 3 + 4) widths.push(total);
+  }
+  if (widths.length < 2) return null;
+  widths.sort((p, q) => p - q);
+  // 흐림 폭이 f인 화면에서 폭 w인 선의 반값 폭 F는 F^4 ≈ w^4 + f^4로 어림된다. 얇은 선만 줄어든다.
+  const full = widths[widths.length >> 1];
+  const blur = 1.58;
+  return Math.max(0.8, Math.pow(Math.max(0, full ** 4 - blur ** 4), 0.25));
+}
+
 function polylineLength(pts: Pt[]): number {
   let s = 0;
   for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
@@ -1041,6 +1128,129 @@ function classifyInkColor(tr: number, tg: number, tb: number): InkColor {
   return "black";
 }
 
+type Measured = InkStroke & {
+  length: number;
+  order: number;
+  /** 골격 위 대비의 중앙값. */
+  contrast: number;
+  /** 연결 요소에 이 획 하나뿐인지. */
+  alone: boolean;
+};
+
+/**
+ * 지운 잔상, 종이 가장자리 그림자, 잡음 점을 버린다. 반사광 아래의 글씨나 마른 마커는 대비가 낮아도 글씨이므로
+ * 대비만으로는 버리지 않는다.
+ * - 바탕보다 13%도 어둡지 않은 획은 지운 잔상으로 본다.
+ * - 대표 대비(길이로 가중한 중앙값)의 35%보다 옅으면서 글씨보다 1.5배 이상 굵고 짧은 변의 10%보다 긴 선은
+ *   종이나 그림자의 가장자리로 본다.
+ * - 홀로 떨어져 있고 글씨 굵기의 절반보다 가늘며 길이도 굵기의 1.5배 안인 점은, 대표 대비의 절반보다 옅으면 잡음으로 본다.
+ *   마침표와 소수점은 글씨 굵기와 비슷하거나 진해서 남는다.
+ */
+function dropFaint(strokes: Measured[], width: number, height: number, medianWidth: number): Measured[] {
+  const order = [...strokes].sort((a, b) => a.contrast - b.contrast);
+  const total = order.reduce((sum, c) => sum + c.length + c.width, 0);
+  let reference = 0;
+  let acc = 0;
+  for (const c of order) {
+    acc += c.length + c.width;
+    if (acc >= total / 2) {
+      reference = c.contrast;
+      break;
+    }
+  }
+  const long = 0.1 * Math.min(width, height);
+  return strokes.filter((c) => {
+    if (c.contrast < 0.13) return false;
+    if (c.contrast < 0.35 * reference && c.width >= 1.5 * medianWidth && c.length >= long) return false;
+    return !(c.alone && c.width < 0.5 * medianWidth && c.length < 1.5 * medianWidth && c.contrast < 0.5 * reference);
+  });
+}
+
+/**
+ * 보드가 사진 안쪽에 찍히면 얇은 테두리가 펜 획처럼 남는다. 글씨보다 뚜렷이 굵은 긴 선들이 나머지 획을
+ * 거의 모두 감싸고 사진의 35% 이상을 두르면 보드 테두리로 보고, 테두리와 그 바깥(벽)의 획을 버린다.
+ * 조건을 하나라도 만족하지 못하면 아무것도 버리지 않는다.
+ */
+function dropBoardFrame(strokes: Measured[], width: number, height: number, medianWidth: number): Measured[] {
+  const bars = strokes.filter((c) => c.width >= 1.5 * medianWidth && c.length >= 0.3 * Math.min(width, height));
+  if (bars.length === 0) return strokes;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const c of bars) {
+    for (const [x, y] of c.points) {
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const bw = x1 - x0;
+  const bh = y1 - y0;
+  if (bw * bh < 0.35 * width * height) return strokes;
+  // 테두리 선은 경계 상자의 변을 따라가야 하고(원근 기울기 여유 10%), 둘레의 절반 이상을 덮어야 한다.
+  // 안쪽에 그린 굵은 동그라미 같은 선은 이 조건에서 빠진다.
+  let cover = 0;
+  const frame = new Set<Measured>();
+  for (const c of bars) {
+    let along = 0;
+    let total = 0;
+    for (let i = 1; i < c.points.length; i++) {
+      const [ax, ay] = c.points[i - 1];
+      const [bx, by] = c.points[i];
+      const l = Math.hypot(bx - ax, by - ay);
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      total += l;
+      if (Math.min((mx - x0) / bw, (x1 - mx) / bw, (my - y0) / bh, (y1 - my) / bh) <= 0.1) along += l;
+    }
+    if (along >= 0.9 * total) {
+      frame.add(c);
+      cover += total;
+    }
+  }
+  if (cover < bw + bh) return strokes;
+  const inside = (c: Measured): boolean => c.points.every(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+  let inLength = 0;
+  let outLength = 0;
+  for (const c of strokes) {
+    if (frame.has(c)) continue;
+    if (inside(c)) inLength += c.length;
+    else outLength += c.length;
+  }
+  if (inLength === 0 || outLength > 0.1 * (inLength + outLength)) return strokes;
+  return strokes.filter((c) => !frame.has(c) && inside(c));
+}
+
+/**
+ * 사진 네 변을 따라가는 긴 선은 글씨가 아니라 보드 테두리나 사진 가장자리 그림자다.
+ * 길이의 80% 이상이 변에서 4% 안에 있고 짧은 변의 20%보다 길면 테두리로 본다.
+ * 단, 글씨와 굵기가 같고 변에서 1.5%보다 떨어져 있으면 글씨로 둔다. 변에 완전히 붙은 짧은 조각도 버린다.
+ */
+function isFrameStroke(c: Measured, width: number, height: number, medianWidth: number): boolean {
+  const band = 0.04 * Math.min(width, height);
+  let inside = 0;
+  let total = 0;
+  let edgeSum = 0;
+  // 사진 변에 완전히 붙어 있는 조각은 잘린 테두리나 벽의 부스러기다.
+  const rim = 0.015 * Math.min(width, height);
+  if (c.points.every(([x, y]) => Math.min(x, y, width - x, height - y) <= rim)) return true;
+  for (let i = 1; i < c.points.length; i++) {
+    const [ax, ay] = c.points[i - 1];
+    const [bx, by] = c.points[i];
+    const l = Math.hypot(bx - ax, by - ay);
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    const edge = Math.min(mx, my, width - mx, height - my);
+    total += l;
+    edgeSum += edge * l;
+    if (edge <= band) inside += l;
+  }
+  if (total < 0.2 * Math.min(width, height) || inside < 0.8 * total) return false;
+  return edgeSum / total <= 0.015 * Math.min(width, height) || c.width >= 1.4 * medianWidth;
+}
+
 // ---------------------------------------------------------------------------
 // 공개 함수
 
@@ -1068,7 +1278,7 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
 
   // 처리 해상도 단위 파라미터
   const minArea = (positive(options.minComponentArea) ?? 8 / (s * s)) * s * s;
-  const maxWidthP = (positive(options.maxStrokeWidth) ?? (Math.max(pw, ph) * 0.014) / s) * s;
+  const maxWidthP = (positive(options.maxStrokeWidth) ?? Math.max(18, Math.max(pw, ph) * 0.014) / s) * s;
   const minLenP = (positive(options.minStrokeLength) ?? 4 / s) * s;
   const tolP = (positive(options.simplifyTolerance) ?? 0.6 / s) * s;
   const maxStrokes = Math.floor(positive(options.maxStrokes) ?? DEFAULTS.maxStrokes);
@@ -1077,7 +1287,9 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
 
   const img = downsample(image.data, width, height, pw, ph);
   const bg = estimateBackground(img);
-  const d = inkContrastMap(img, bg);
+  const maps = inkContrastMap(img, bg);
+  const d = maps.smooth;
+  const rawNoise = contrastNoise(maps.raw);
   const noise = contrastNoise(d);
   const high = Math.max(inkContrast, noise.median + 7 * noise.sigma);
   const low = Math.max(inkContrast * 0.55, noise.median + 3.5 * noise.sigma);
@@ -1090,11 +1302,13 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
   let any = false;
   // 획 가장자리는 초점과 JPEG 때문에 번진다. 가까운 획 중심 대비의 절반을 경계로 잡아야
   // 굵기가 실제와 같고 획 사이 좁은 틈이 메워지지 않는다.
+  // 잡음이 적으면 흐리지 않은 값으로 경계를 잡아 얇은 획이 부풀지 않게 하고, 잡음이 많으면 흐린 값을 쓴다.
+  const edgeRaw = Math.max(0, Math.min(1, (0.04 - rawNoise.sigma) / 0.025));
   const peak = localMax(d, pw, ph, Math.max(2, Math.round(Math.max(pw, ph) * 0.003)));
   for (let y = 0; y < ph; y++) {
     for (let x = 0; x < pw; x++) {
       const v = d[y * pw + x];
-      if (v >= low && v >= peak[y * pw + x] * 0.5) {
+      if (v >= low && v + (maps.raw[y * pw + x] - v) * edgeRaw >= peak[y * pw + x] * 0.5) {
         mask[(y + 1) * W + x + 1] = 1;
         any = true;
       }
@@ -1120,11 +1334,17 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
 
   // 4. 펜보다 훨씬 굵은 부분을 깎아 낸다(거리 변환으로 하는 opening). 덩어리에 붙은 획은 남는다.
   let dist2 = sqDistanceTo(invert(mask), W, H);
+  // 반값 경계 마스크는 굵은 덩어리 가장자리를 깎으므로, 뚜렷하게 어두운 픽셀(대비 0.3 이상)도 함께 본다.
+  const bold = new Uint8Array(N);
+  for (let y = 0; y < ph; y++) {
+    for (let x = 0; x < pw; x++) if (d[y * pw + x] >= 0.3) bold[(y + 1) * W + x + 1] = 1;
+  }
+  const boldDist2 = sqDistanceTo(invert(bold), W, H);
   const R = maxWidthP / 2 + 0.5;
   const thick = new Uint8Array(N);
   let anyThick = false;
   for (let i = 0; i < N; i++) {
-    if (dist2[i] > R * R) {
+    if (dist2[i] > R * R || boldDist2[i] > R * R) {
       thick[i] = 1;
       anyThick = true;
     }
@@ -1133,15 +1353,20 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
     const toThick = sqDistanceTo(thick, W, H);
     const reach = 1.25 * R + 1.5;
     for (let i = 0; i < N; i++) if (toThick[i] <= reach * reach) mask[i] = 0;
-    // 깎은 자리에 맞닿은 작은 조각은 덩어리 모서리의 부스러기다.
+    // 깎은 자리에 맞닿은 작거나 옅은 조각은 덩어리 모서리나 그늘의 부스러기다.
     const { labels, count, areas } = labelComponents(mask, W, H, true);
     const limit = (reach + 2) * (reach + 2);
     const touching = new Uint8Array(count + 1);
-    for (let i = 0; i < N; i++) if (labels[i] && toThick[i] <= limit) touching[labels[i]] = 1;
+    const depth = new Float64Array(count + 1);
+    for (let i = 0; i < N; i++) {
+      if (!labels[i]) continue;
+      if (toThick[i] <= limit) touching[labels[i]] = 1;
+      depth[labels[i]] += d[(Math.floor(i / W) - 1) * pw + (i % W) - 1];
+    }
     const next = new Uint8Array(N);
     for (let i = 0; i < N; i++) {
       const l = labels[i];
-      if (l && areas[l] >= (touching[l] ? 2 * R * R : minArea)) next[i] = 1;
+      if (l && (touching[l] ? areas[l] >= 2 * R * R && depth[l] >= 0.25 * areas[l] : areas[l] >= minArea)) next[i] = 1;
     }
     mask = next;
     dist2 = sqDistanceTo(invert(mask), W, H);
@@ -1151,7 +1376,7 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
 
   // 5~6. 골격과 획
   const sk = mask.slice();
-  thinZhangSuen(sk, W);
+  thin(sk, W);
   const chains = traceSkeleton(sk, W, dist2);
 
   // 8. 굵기와 색 통계. 아주 짧은 획은 연결 요소 전체 색을 따른다.
@@ -1160,6 +1385,7 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
   const stats = chains.map((c) => {
     const sum = [0, 0, 0, 0];
     const radii = new Float32Array(c.px.length);
+    const depths = new Float32Array(c.px.length);
     let order = Infinity;
     c.px.forEach((p, k) => {
       const x = (p % W) - 1;
@@ -1171,16 +1397,25 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
       sum[2] += (img.rgb[o + 2] / Math.max(8, sampleGrid(bg.b, bg, x, y))) * wgt;
       sum[3] += wgt;
       radii[k] = Math.sqrt(dist2[p]);
+      depths[k] = d[y * pw + x];
       if (p < order) order = p;
     });
     const label = comp.labels[c.px[0]];
     for (let k = 0; k < 4; k++) compSum[label * 4 + k] += sum[k];
     chainsPerComp[label]++;
     radii.sort();
-    return { sum, label, order, radius: radii[radii.length >> 1], n: c.px.length };
+    depths.sort();
+    return {
+      sum,
+      label,
+      order,
+      contrast: depths[depths.length >> 1],
+      radius: radii[radii.length >> 1],
+      n: c.px.length,
+    };
   });
 
-  const candidates: Array<InkStroke & { length: number; order: number }> = [];
+  const candidates: Measured[] = [];
   const ix = 1 / sx;
   const iy = 1 / sy;
   const round2 = (v: number): number => Math.round(v * 100) / 100;
@@ -1196,12 +1431,25 @@ export function extractInkStrokes(image: InkImageInput, options: InkStrokeOption
     candidates.push({
       points: simple.map(([x, y]): InkPoint => [round2(x * ix), round2(y * iy)]),
       color: classifyInkColor(sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3]),
-      width: round2(Math.max(1, 2 * st.radius - 1) / s),
+      width: round2(Math.max(1, strokeWidth(c.px, W, maps.raw, pw, ph, st.radius) ?? 2 * st.radius - 0.5) / s),
       closed,
-      length,
+      length: length / s,
+      contrast: st.contrast,
+      alone: chainsPerComp[st.label] <= 1,
       order: st.order,
     });
   });
+
+  // 글씨가 아닌 획 제외
+  {
+    const sizes = candidates.map((c) => c.width).sort((a, b) => a - b);
+    const medianWidth = sizes.length ? sizes[sizes.length >> 1] : 1;
+    const ink = dropFaint(candidates, width, height, medianWidth);
+    const inner = ink.filter((c) => !isFrameStroke(c, width, height, medianWidth));
+    const kept = dropBoardFrame(inner, width, height, medianWidth);
+    candidates.length = 0;
+    candidates.push(...kept);
+  }
 
   // 9. 상한: 긴 획부터 담는다.
   candidates.sort((a, b) => b.length - a.length);
