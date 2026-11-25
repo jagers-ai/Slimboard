@@ -132,13 +132,14 @@ function useShare() {
   }, []);
 
   // iOS opens the share sheet only straight from the tap: nothing may be awaited before share().
-  async function send({ file, title }: GoodnotesFile) {
+  async function send({ file }: GoodnotesFile) {
     if (running.current) return;
     const id = running.current = ++sequence.current;
     setBusy(true);
     setFailed(false);
     try {
-      await navigator.share({ files: [file], title });
+      // Files only: with a title, iOS also saves the title as a text file next to it.
+      await navigator.share({ files: [file] });
     } catch (error) {
       if (running.current === id && !(error instanceof DOMException && error.name === "AbortError")) {
         console.error("Share failed", error);

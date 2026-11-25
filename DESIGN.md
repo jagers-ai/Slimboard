@@ -118,7 +118,10 @@ loading/error/retry states and at least 48px controls.
 - States: preparing (spinner, disabled `준비 중`), ready (white paper with the pen strokes at the photo's ratio, 12px corners, `#eaebee` border, no shadow), no handwriting / no photo / unfinished note (`노트로 돌아가기`), photo or conversion failure (`다시 시도`). Non-ready states reuse `capture-placeholder` with an icon and one sentence.
 - Share only straight from the tap with the file already prepared. Closing the share sheet says nothing; another failure shows `보내지 못했어요. 다시 눌러 주세요.` above the button. Never announce success after sharing: it does not mean Goodnotes saved the note.
 - When the browser cannot share files, the primary button becomes `파일로 저장`. Decide by capability, never by device detection.
-- The screen never names the file format. `lib/goodnotes-export.ts` alone decides it.
+- The screen never names the file format. `lib/goodnotes-export-format.ts` alone decides it (`lib/goodnotes-export.ts` only calls it).
+- The file is a `.goodnotes` document (`application/zip`) so strokes stay erasable and lasso-selectable in Goodnotes. Page 1 holds the pen strokes on a white A4 page (landscape for a landscape photo, portrait otherwise), at the photo's ratio, top-left aligned with a margin of 4% of the page width; colors are the four pen colors the preview uses, widths are clamped to 0.8–6 pt. Page 2 holds the original photo at the photo's ratio. The document title is the note title or `슬림보드 노트`.
+- Pass only `files` to `navigator.share`: with a `title`, iOS saves an extra text file next to the note.
+- Profile and page units live in one constant, `GOODNOTES_EXPORT_SETUP`, and change only with device test results. Goodnotes draws 1 pt of a background PDF as 11/6 page units, so every page is declared as its background PDF size × 11/6 (device check 2026-11-26).
 
 ## 사용자에게 보이는 문구
 
