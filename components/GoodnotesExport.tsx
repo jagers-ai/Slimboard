@@ -6,11 +6,11 @@ import { ChevronLeft, FileText, Image as ImageIcon, LoaderCircle } from "lucide-
 import Link from "@/components/AppLink";
 import { AppFrame } from "@/components/AppFrame";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
-import { GoodnotesExportError, prepareGoodnotesPage, type GoodnotesFailure, type GoodnotesPage } from "@/lib/goodnotes-export";
+import { GoodnotesExportError, prepareGoodnotesFile, type GoodnotesFailure, type GoodnotesFile } from "@/lib/goodnotes-export";
 
 type Stage =
   | { name: "preparing" | "empty" | "unfinished" | GoodnotesFailure }
-  | { name: "ready"; page: GoodnotesPage; shareable: boolean };
+  | { name: "ready"; prepared: GoodnotesFile; shareable: boolean };
 
 const messages: Record<Exclude<Stage["name"], "ready">, string> = {
   preparing: "글씨를 옮기는 중이에요",
@@ -33,8 +33,8 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   useEffect(() => {
     if (!photoUrl || !completed) return;
     const abort = new AbortController();
-    prepareGoodnotesPage({ photoUrl, title, signal: abort.signal }).then(page => {
-      if (!abort.signal.aborted) setProgress(page ? { name: "ready", page, shareable: canShare(page.file) } : { name: "empty" });
+    prepareGoodnotesFile({ photoUrl, title, signal: abort.signal }).then(prepared => {
+      if (!abort.signal.aborted) setProgress(prepared ? { name: "ready", prepared, shareable: canShare(prepared.file) } : { name: "empty" });
     }, error => {
       if (abort.signal.aborted) return;
       console.error("Goodnotes export failed", error, error instanceof Error ? error.cause : undefined);
@@ -49,7 +49,7 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   }, [stage.name]);
 
   const share = useShare();
-  const saveUrl = useObjectUrl(stage.name === "ready" && !stage.shareable ? stage.page.file : null);
+  const saveUrl = useObjectUrl(stage.name === "ready" && !stage.shareable ? stage.prepared.file : null);
   const noteUrl = `/notes/${noteId}`;
 
   function retry() {
@@ -65,11 +65,11 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   } else if (stage.name !== "ready") {
     action = <Link className="button primary full-width" href={noteUrl}>노트로 돌아가기</Link>;
   } else if (stage.shareable) {
-    const { page } = stage;
+    const { prepared } = stage;
     action = <button className="button primary full-width" type="button" aria-disabled={share.busy || undefined}
-      onClick={() => void share.send(page)}>굿노트로 보내기</button>;
+      onClick={() => void share.send(prepared)}>굿노트로 보내기</button>;
   } else {
-    action = <a className="button primary full-width" href={saveUrl} download={stage.page.file.name}>{stage.page.saveLabel}</a>;
+    action = <a className="button primary full-width" href={saveUrl} download={stage.prepared.file.name}>파일로 저장</a>;
   }
 
   const footer = <div className="goodnotes-actions">
@@ -84,20 +84,20 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
       <span aria-hidden="true" />
     </header>
     <section className={stage.name === "ready" ? "goodnotes-export" : "capture-placeholder goodnotes-state"} aria-busy={stage.name === "preparing"}>
-      {stage.name === "ready" ? <InkPaper preview={stage.page.preview} />
+      {stage.name === "ready" ? <InkPaper preview={stage.prepared.preview} />
         : stage.name === "preparing" ? <LoaderCircle size={40} className="spinner" aria-hidden="true" />
         : stage.name === "photo" || stage.name === "photo-missing" ? <ImageIcon size={40} aria-hidden="true" />
         : <FileText size={40} aria-hidden="true" />}
       <p className={stage.name === "ready" ? "capture-hint" : undefined} role="status">
         {stage.name !== "ready" ? messages[stage.name]
-          : stage.shareable ? "공유 화면에서 Goodnotes를 골라 주세요. 안 보이면 더 보기에 있어요."
+          : stage.shareable ? <><span>공유 화면에서 Goodnotes를 골라 주세요.</span> <span>안 보이면 더 보기에 있어요.</span></>
           : "저장한 파일을 굿노트에서 열어 주세요."}
       </p>
     </section>
   </AppFrame>;
 }
 
-function InkPaper({ preview }: { preview: GoodnotesPage["preview"] }) {
+function InkPaper({ preview }: { preview: GoodnotesFile["preview"] }) {
   return <svg className="goodnotes-paper" role="img" aria-label="사진에서 옮긴 글씨"
     viewBox={`0 0 ${preview.width} ${preview.height}`}
     style={{ "--paper-ratio": preview.width / preview.height } as React.CSSProperties}>
@@ -132,7 +132,7 @@ function useShare() {
   }, []);
 
   // iOS opens the share sheet only straight from the tap: nothing may be awaited before share().
-  async function send({ file, title }: GoodnotesPage) {
+  async function send({ file, title }: GoodnotesFile) {
     if (running.current) return;
     const id = running.current = ++sequence.current;
     setBusy(true);

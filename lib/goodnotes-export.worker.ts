@@ -1,13 +1,13 @@
-import { convertInk, readInkPixels, type InkReply, type InkRequest } from "./goodnotes-ink";
+import { readInk, readInkPixels, type InkReply } from "./goodnotes-ink";
 
 const scope = self as unknown as {
-  onmessage: ((event: MessageEvent<InkRequest>) => void) | null;
-  postMessage(reply: InkReply, transfers?: Transferable[]): void;
+  onmessage: ((event: MessageEvent<Blob>) => void) | null;
+  postMessage(reply: InkReply): void;
 };
 
-scope.onmessage = event => { void convert(event.data); };
+scope.onmessage = event => { void read(event.data); };
 
-async function convert({ photo, title }: InkRequest) {
+async function read(photo: Blob) {
   let step: "photo" | "ink" = "photo";
   try {
     if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas === "undefined") {
@@ -22,10 +22,8 @@ async function convert({ photo, title }: InkRequest) {
       scope.postMessage({ status: "unsupported" });
       return;
     }
-    const jpeg = new Uint8Array(await photo.arrayBuffer());
     step = "ink";
-    const document = convertInk(pixels, jpeg, title);
-    scope.postMessage({ status: "done", document }, document ? [document.bytes.buffer] : []);
+    scope.postMessage({ status: "done", ink: readInk(pixels) });
   } catch (error) {
     scope.postMessage({ status: "failed", step, detail: String(error) });
   }

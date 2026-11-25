@@ -1,18 +1,11 @@
-// Turns photo pixels into the document and preview handed to Goodnotes.
-// The only caller of ink-strokes and ink-pdf; it runs in the export worker and,
-// where a worker cannot draw, on the page itself.
-import { INK_PDF_COLORS, buildInkPdf, inkPdfLineWidth, inkPdfPageSize } from "./ink-pdf";
+// Reads pen strokes from a decoded photo. Runs in the export worker and, where a
+// worker cannot draw, on the page itself. Knows nothing about the file format.
 import { extractInkStrokes } from "./ink-strokes";
 
-export const goodnotesDocument = { type: "application/pdf", extension: ".pdf", saveLabel: "PDF 저장" } as const;
-
 export type InkPixels = { width: number; height: number; data: Uint8ClampedArray };
-/** One path per color and pen width, in the coordinates of `width` x `height`. */
-export type InkPreview = { width: number; height: number; paths: Array<{ d: string; color: string; width: number }> };
-export type InkDocument = { bytes: Uint8Array; preview: InkPreview };
-export type InkRequest = { photo: Blob; title: string };
+export type Ink = Pick<ReturnType<typeof extractInkStrokes>, "width" | "height" | "strokes">;
 export type InkReply =
-  | { status: "done"; document: InkDocument | null }
+  | { status: "done"; ink: Ink }
   | { status: "unsupported" }
   | { status: "failed"; step: "photo" | "ink"; detail: string };
 
@@ -42,35 +35,7 @@ export function readInkPixels(
   }
 }
 
-/** Null means the photo holds no handwriting. */
-export function convertInk(pixels: InkPixels, jpeg: Uint8Array, title: string): InkDocument | null {
+export function readInk(pixels: InkPixels): Ink {
   const { width, height, strokes } = extractInkStrokes(pixels);
-  if (!strokes.length) return null;
-  return {
-    bytes: buildInkPdf({ width, height, strokes, title, photo: { jpeg } }),
-    preview: inkPreview(width, height, strokes),
-  };
+  return { width, height, strokes };
 }
-
-function inkPreview(width: number, height: number, strokes: ReturnType<typeof extractInkStrokes>["strokes"]): InkPreview {
-  const { scale } = inkPdfPageSize(width, height);
-  const paths = new Map<string, InkPreview["paths"][number]>();
-  for (const { points, color, width: penWidth } of strokes) {
-    if (!points.length) continue;
-    // Same limits as the document, so the preview shows the pen that will arrive.
-    const shownWidth = Math.round(inkPdfLineWidth(penWidth, scale) / scale * 2) / 2;
-    const key = `${color} ${shownWidth}`;
-    let path = paths.get(key);
-    if (!path) paths.set(key, path = { d: "", color: cssColor(color), width: shownWidth });
-    path.d += points.map(([x, y], index) => `${index ? "L" : "M"}${round(x)} ${round(y)}`).join("");
-    // A zero-length line still paints its round caps, so a single point shows as a dot.
-    if (points.length === 1) path.d += "h0";
-  }
-  return { width, height, paths: [...paths.values()] };
-}
-
-function cssColor(color: keyof typeof INK_PDF_COLORS) {
-  return `rgb(${INK_PDF_COLORS[color].map(value => Math.round(value * 255)).join(" ")})`;
-}
-
-function round(value: number) { return Math.round(value * 10) / 10; }

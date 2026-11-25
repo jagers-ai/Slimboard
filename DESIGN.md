@@ -111,6 +111,15 @@ the existing authorized image endpoint or the selected local analysis image.
 The modal must support Escape, focus containment, safe areas, enlarged text,
 loading/error/retry states and at least 48px controls.
 
+## Goodnotes export
+
+- Entry: a quiet `굿노트로 보내기` text button in a `photo-download-row` right under the saved photo (`NoteDocument` `photoActions`). Show it only for a completed note with a photo; disable it while the note is saving, converting or deleting. It opens `/notes/[id]/goodnotes` and keeps the note's session draft.
+- The screen uses `screen-header` with back to the note, the title `굿노트로 보내기`, and one full-width primary button in the action bar. Preparation starts on open, and the heading takes focus when the stage changes.
+- States: preparing (spinner, disabled `준비 중`), ready (white paper with the pen strokes at the photo's ratio, 12px corners, `#eaebee` border, no shadow), no handwriting / no photo / unfinished note (`노트로 돌아가기`), photo or conversion failure (`다시 시도`). Non-ready states reuse `capture-placeholder` with an icon and one sentence.
+- Share only straight from the tap with the file already prepared. Closing the share sheet says nothing; another failure shows `보내지 못했어요. 다시 눌러 주세요.` above the button. Never announce success after sharing: it does not mean Goodnotes saved the note.
+- When the browser cannot share files, the primary button becomes `파일로 저장`. Decide by capability, never by device detection.
+- The screen never names the file format. `lib/goodnotes-export.ts` alone decides it.
+
 ## 사용자에게 보이는 문구
 
 - 화면에는 사용자의 행동·진행 상태·결과·복구에 필요한 문구만 쓴다.

@@ -259,6 +259,7 @@ h1:focus, h2:focus { outline: none; }
 .hero-button { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 24px; background: rgba(17, 18, 20, .55); color: #fff; }
 .note-hero-actions.is-plain .hero-button { background: transparent; color: var(--ink-strong); }
 .hero-button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 5px var(--primary-ink); }
+.notebook-document > .photo-download-row { margin: 4px -8px 0; }
 .notebook-document .photo-download-row + .note-meta { margin-top: 4px; }
 .note-meta { margin: 20px 0 0; font-size: .8125rem; color: var(--muted); }
 .notebook-document h1 { margin: 6px 0 0; font-size: 1.375rem; font-weight: 700; line-height: 1.35; color: var(--ink-strong); }
@@ -325,3 +326,5 @@ h1:focus, h2:focus { outline: none; }
   margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; background: #fff;
 }
 .goodnotes-actions .inline-message { margin: 0 0 8px; }
+.goodnotes-shell .screen-header h1 { word-break: keep-all; }
+.goodnotes-export .capture-hint > span { display: inline-block; }
