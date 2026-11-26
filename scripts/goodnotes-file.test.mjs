@@ -810,15 +810,23 @@ test('가변 굵기 시그니처: codec, goodparse, parser-for-goodnotes 기록�
   assert.equal(decodeTpl(encodeVariablePenTpl({ ...pen, kind: 'brush' })).signature, BRUSH_PEN_SIGNATURE);
 });
 
-test('만년필 왕복: 중심선 제어점 = 입력 점, 반폭 = 지름/2, 다시 읽어도 같다', () => {
+test('만년필 왕복: 중심선이 입력 점을 모두 지나고, 반폭 = 지름/2, 다시 읽어도 같다', () => {
+  const snap = v => Math.round(v * 32) / 32;
   for (const [points, widths] of [[RAMP, RAMP_W], [S_CURVE, S_W]]) {
     const pen = buildVariablePen('fountain', points, widths);
     const sp = pen.centerline[0];
-    assert.deepEqual(sp.move, [points[0][0], points[0][1], widths[0] / 2]);
-    // 중점 2차 Bézier: 끝점 = 연속한 제어점의 중점, 첫 점과 끝 점은 곡선 위
+    // 기본(curve "through"): 구간 끝점 = 입력 점(1/32 간격으로 반올림), 반폭 상대 오차 1/64 이하
+    assert.deepEqual(sp.move.slice(0, 2), points[0].map(snap));
+    const ends = [sp.move, ...sp.quads.map(q => q.p)];
+    for (let i = 0; i < points.length; i += 1) {
+      const e = ends.find(e => e[0] === snap(points[i][0]) && e[1] === snap(points[i][1]));
+      assert.ok(e, `점 ${i}가 구간 끝점에 있다`);
+      assert.ok(Math.abs(e[2] - widths[i] / 2) <= widths[i] / 2 / 64 + 1e-12, `점 ${i} 반폭`);
+    }
+    assert.ok(sp.quads.length >= points.length - 1 && sp.quads.length <= 2 * (points.length - 1));
     const drawn = renderVariableSubpath(sp, 4);
-    assert.deepEqual(drawn.at(-1).slice(0, 2), points.at(-1));
-    assert.ok(polylineHausdorff(drawn.map(p => [p[0], p[1]]), points) < 2, '곡선이 점들 곁을 지난다');
+    assert.deepEqual(drawn.at(-1).slice(0, 2), points.at(-1).map(snap));
+    assert.ok(polylineHausdorff(drawn.map(p => [p[0], p[1]]), points) < 0.5, '곡선이 점들 위를 지난다');
     const decoded = decodeVariablePen(decodeTpl(encodeVariablePenTpl(pen)));
     assert.equal(decoded.kind, 'fountain');
     assert.equal(decoded.version, 2);
@@ -830,14 +838,18 @@ test('만년필 왕복: 중심선 제어점 = 입력 점, 반폭 = 지름/2, 다
       assert.deepEqual(q.c, r32(sp.quads[k].c));
       assert.deepEqual(q.p, r32(sp.quads[k].p));
     });
-    // 입력 점마다 제어점 하나(나누지 않은 구간), 반폭이 같은지
-    const controls = sp.quads.map(q => q.c);
+    assert.equal(decoded.outlines.length, sp.quads.length);
+    // curve "midpoint", 반올림 없음: 굿노트 손글씨처럼 입력 점마다 제어점 하나, 끝점 = 연속한 제어점의 중점
+    const mid = buildVariablePen('fountain', points, widths, { curve: 'midpoint', maxTurn: Math.PI / 6, coordinateStep: 0 }).centerline[0];
+    assert.deepEqual(mid.move, [points[0][0], points[0][1], widths[0] / 2]);
     for (let i = 1; i < points.length; i += 1) {
-      const c = controls.find(c => c[0] === points[i][0] && c[1] === points[i][1]);
-      assert.ok(c, `점 ${i}가 제어점에 있다`);
+      const c = mid.quads.map(q => q.c).find(c => c[0] === points[i][0] && c[1] === points[i][1]);
+      assert.ok(c, `midpoint: 점 ${i}가 제어점에 있다`);
       assert.equal(c[2], widths[i] / 2);
     }
-    assert.equal(decoded.outlines.length, sp.quads.length);
+    // curve "polyline": 점 사이마다 곧은 구간 하나
+    const line = buildVariablePen('fountain', points, widths, { curve: 'polyline', coordinateStep: 0 }).centerline[0];
+    assert.equal(line.quads.length, points.length - 1);
   }
 });
 
@@ -877,12 +889,19 @@ test('만년필 레이아웃: 명령 0/1, 윤곽 수 = quad 수, 명령 수 배�
 });
 
 test('윤곽: 하위 경로마다 닫혀 있고, 굵기 안을 덮고 밖은 비운다', () => {
-  for (const [points, widths, outsideCheck] of [[RAMP, RAMP_W, true], [S_CURVE, S_W, false]]) {
-    const pen = decodeVariablePen(decodeTpl(encodeVariablePenTpl(buildVariablePen('fountain', points, widths))));
+  // 반올림 없음(outlineStep 0, angleStep 0): 원호와 옆선이 정확히 맞물린다.
+  // 기본(윤곽 좌표 1/8 간격): move와 옆선 끝점을 반올림해 원호 끝과 최대 (1/8)·√2/2 ≈ 0.088단위(0.048pt) 어긋난다.
+  // 실제 판서 A4(구간 33,060개, 접점 99,180곳)에서 잰 최대 틈은 0.08839단위였다(2026-11-27).
+  const exact = { outlineStep: 0, angleStep: 0 };
+  for (const [points, widths, outsideCheck, geo, gap] of [
+    [RAMP, RAMP_W, true, exact, 1e-3], [S_CURVE, S_W, false, exact, 1e-3],
+    [RAMP, RAMP_W, true, {}, 0.0885], [S_CURVE, S_W, false, {}, 0.0885],
+  ]) {
+    const pen = decodeVariablePen(decodeTpl(encodeVariablePenTpl(buildVariablePen('fountain', points, widths, geo))));
     const polys = pen.outlines.map(o => flattenOutline(o, 0.2));
     for (const poly of polys) {
       const [a, b] = [poly[0], poly.at(-1)];
-      assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-3, '마지막 원호가 첫 move 점에서 끝난다');
+      assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < gap, '마지막 원호가 첫 move 점에서 끝난다');
     }
     // 이어지는 명령 끝점과 다음 명령 시작점이 맞는다(원호 시작점 포함)
     for (const sub of pen.outlines) {
@@ -890,7 +909,7 @@ test('윤곽: 하위 경로마다 닫혀 있고, 굵기 안을 덮고 밖은 비
       for (const cmd of sub.slice(1)) {
         if (cmd.op === 'A') {
           const s = [cmd.cx + cmd.r * Math.cos(cmd.a0), cmd.cy + cmd.r * Math.sin(cmd.a0)];
-          assert.ok(Math.hypot(s[0] - cur[0], s[1] - cur[1]) < 1e-3, '원호 시작점 = 현재 점');
+          assert.ok(Math.hypot(s[0] - cur[0], s[1] - cur[1]) < gap, '원호 시작점 = 현재 점');
           assert.ok(Math.abs(cmd.a0 - cmd.a1 - Math.PI) < 1e-5 && cmd.clockwise);
           cur = [cmd.cx + cmd.r * Math.cos(cmd.a1), cmd.cy + cmd.r * Math.sin(cmd.a1)];
         } else cur = [cmd.x, cmd.y];
@@ -966,6 +985,71 @@ test('점 하나짜리 획: quad 하나, 윤곽 하나가 반폭 원이다', () 
   assert.equal(sp.move[2], 3);
   assert.equal(variableOutlines([sp]).length, 1);
   assert.throws(() => variableCenterline([[0, 0]], [1, 2]), /PATH_RADII_LENGTH/);
+});
+
+/**
+ * 실제 판서 A4 한 장 규모의 합성 획: 획 2427개, 점 35,541개(실제 판서 lib/ink-medial-strokes.ts 출력과 같은 수),
+ * 점 간격 0.3~1.9단위, 지름 0.64~7.8단위, 좌표 1/32 간격. 같은 seed면 같은 획이다.
+ * 실제 판서는 만년필 1,896,812바이트, 붓 1,943,134바이트이고 이 합성 입력은 1,891,282, 1,921,166바이트다(2026-11-27).
+ * 예전 기본(중점 곡선, 30° 분할, 반올림 없음)이면 이 합성 입력이 만년필 3,354,653, 붓 3,435,223바이트다.
+ */
+function synthHandwriting({ strokes = 2427, points = 35541, seed = 7 } = {}) {
+  let s = seed >>> 0;
+  const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  const snap = v => Math.round(v * 32) / 32;
+  const W = A4_PT.width * GOODNOTES_UNITS_PER_PT;
+  const H = A4_PT.height * GOODNOTES_UNITS_PER_PT;
+  const out = [];
+  let left = points;
+  for (let i = 0; i < strokes; i += 1) {
+    const n = i === strokes - 1 ? left : Math.max(1, Math.min(left - (strokes - i - 1), Math.round(4 + 22 * rnd() ** 1.6)));
+    left -= n;
+    const row = Math.floor(i / 60);
+    const col = i % 60;
+    let x = 40 + (col / 60) * (W - 80) + 6 * rnd();
+    let y = 40 + row * ((H - 80) / 41) + 10 * rnd();
+    let a = 2 * Math.PI * rnd();
+    let w = 0.7 + 2 * rnd();
+    const pts = [];
+    const ws = [];
+    for (let k = 0; k < n; k += 1) {
+      pts.push([snap(x), snap(y)]);
+      ws.push(w);
+      const step = 0.3 + 1.6 * rnd() ** 2;
+      a += (rnd() < 0.08 ? 1.6 : 0.5) * (rnd() - 0.5) * 2;
+      x += step * Math.cos(a);
+      y += step * Math.sin(a);
+      w = Math.min(7.8, Math.max(0.64, w + 0.3 * (rnd() - 0.5)));
+    }
+    out.push({ points: pts, widths: ws, color: [[0, 0, 0], [0.8, 0.1, 0.1], [0.1, 0.2, 0.8]][i % 3] });
+  }
+  return { strokes: out, W, H };
+}
+
+test('크기: 실제 판서 규모(획 2427개, 점 35,541개) A4 한 장이 만년필과 붓 모두 2MB(2,000,000바이트) 이하', async () => {
+  const { strokes, W, H } = synthHandwriting();
+  assert.equal(strokes.reduce((a, st) => a + st.points.length, 0), 35541);
+  for (const pen of ['fountain', 'brush']) {
+    const bytes = await buildGoodnotesDocument({
+      title: '크기', profile: 'codec', idSeed: `size-${pen}`, createdAt: new Date(Date.UTC(2026, 10, 27)),
+      pages: [{ width: W, height: H, strokes: strokes.map(st => ({ pen, ...st })) }],
+    });
+    assert.ok(bytes.length <= 2_000_000, `${pen} ${bytes.length}바이트`);
+    const files = await readZipFiles(bytes);
+    const [pg] = listTemplatePages({ notesIndex: files.get('index.notes.pb'), events: files.get('index.events.pb'), names: readZip(bytes).map(e => e.name) });
+    let quads = 0;
+    let outlines = 0;
+    let count = 0;
+    for (const obj of pageObjects(files.get(`notes/${pg.noteId}`))) {
+      const v = variablePenOf(obj);
+      if (!v) continue;
+      count += 1;
+      quads += v.centerline.reduce((a, c) => a + c.quads.length, 0);
+      outlines += v.outlines.length;
+    }
+    assert.equal(count, strokes.length);
+    assert.equal(outlines, quads, '굿노트가 죽지 않는 조건: quad 구간마다 윤곽 하나');
+  }
 });
 
 test('buildGoodnotesDocument: 만년필, 붓, 볼펜을 한 쪽에 쓰고 f3와 경로를 되읽는다', async () => {

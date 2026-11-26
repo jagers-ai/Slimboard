@@ -690,24 +690,57 @@ export function decodeVariablePen(image: TplImage, options: { brushQuadOrder?: B
 // 가변 굵기 중심선과 캡슐 윤곽 만들기
 
 export type VariableGeometryOptions = {
-  /** 윤곽 옆선 cubic의 허용 오차(페이지 단위). 기본 0.1 */
+  /** 윤곽 옆선 cubic의 허용 오차(페이지 단위). 기본 0.15 */
   tolerance?: number;
-  /** 한 quad 구간이 꺾이는 최대 각도(라디안). 넘으면 같은 곡선을 둘로 나눈다. 기본 30° */
+  /** 한 quad 구간이 꺾이는 최대 각도(라디안). 넘으면 같은 곡선을 둘로 나눈다. 기본 60° */
   maxTurn?: number;
   /** 반폭 하한(codec 개선 브랜치와 같은 0.05) */
   minRadius?: number;
   /** 점 하나짜리 획에 더하는 짧은 거리(codec과 같은 0.01) */
   dotLength?: number;
-  /** 주면 polylineToMidpointQuadPath처럼 꼭짓점 근처 제어점을 더해 모서리 오차를 이 값 아래로 둔다. 기본 끔. */
+  /** 주면 polylineToMidpointQuadPath처럼 꼭짓점 근처 제어점을 더해 모서리 오차를 이 값 아래로 둔다. 기본 끔. curve "midpoint"에서만. */
   cornerTolerance?: number;
+  /**
+   * 중심선을 점들에서 만드는 방식.
+   * "through"(기본): 곡선이 입력 점을 모두 지난다. 점마다 접선을 정해 이웃한 두 점 사이를 2차 Bézier 하나(접선이 맞지
+   *   않으면 둘)로 잇는다. 꺾임이 cornerDegrees보다 큰 점은 모서리로 남긴다. 점을 줄인 획(lib/ink-medial-strokes.ts)에서
+   *   점 사이의 휜 모양을 되살리고, 구간 수가 점 수 − 1에 가깝다.
+   * "midpoint": 입력 점이 제어점이고 끝점은 연속한 제어점의 중점이다(굿노트 손글씨 관찰). 모서리가 둥글게 깎인다.
+   * "polyline": 점 사이를 곧은 구간으로 잇는다.
+   */
+  curve?: "through" | "midpoint" | "polyline";
+  /** curve "through"에서 이 각도(도)보다 크게 꺾이는 점은 모서리로 둔다. 기본 50 */
+  cornerDegrees?: number;
+  /**
+   * 중심선 저장 좌표 간격(페이지 단위). 중심선 좌표와 반폭(snapRadius)을 반올림해 ZIP 압축이 잘 되게 한다.
+   * 0이면 그대로. 기본 1/32(0.017pt, lib/ink-medial-strokes.ts 출력 간격과 같음).
+   */
+  coordinateStep?: number;
+  /** 윤곽(옆선 cubic과 move) 좌표 간격. 0이면 그대로. 기본 1/8(0.068pt, 0.024mm). 원호 시작점과 최대 0.09단위 어긋난다. */
+  outlineStep?: number;
+  /** 끝 원호 각도 간격(라디안). 0이면 그대로. 기본 π/512(옆선 끝 방향이 0.18° 안에서 바뀐다). */
+  angleStep?: number;
 };
+
+export const VARIABLE_GEOMETRY_DEFAULTS = {
+  tolerance: 0.15,
+  maxTurnDegrees: 60,
+  cornerDegrees: 50,
+  coordinateStep: 1 / 32,
+  outlineStep: 1 / 8,
+  angleStep: Math.PI / 512,
+} as const;
 
 const lerp3 = (a: RadiusPoint, b: RadiusPoint, t: number): RadiusPoint => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
 /**
- * 점과 반폭으로 중심선을 만든다. 굿노트 손글씨처럼 "중점 2차 Bézier"다: 입력 점이 제어점이고, 끝점은 연속한 제어점의
- * 중점이며(goodparse 관찰), 첫 점과 끝 점은 곡선 위에 있다. 반폭도 같은 방식으로 2차 Bézier를 따른다.
+ * 점과 반폭으로 중심선(2차 Bézier 구간들)을 만든다. 기본(curve "through")은 곡선이 입력 점을 모두 지나고 반폭은 점 사이에서
+ * 선형으로 바뀐다. curve "midpoint"는 굿노트 손글씨처럼 입력 점이 제어점이고 끝점은 연속한 제어점의 중점이다(goodparse 관찰).
  * 많이 꺾이는 구간은 de Casteljau로 나눈다(곡선 모양은 그대로). 점이 하나뿐이면 dotLength만큼 떨어진 점을 더한다.
+ * 좌표와 반폭은 coordinateStep으로 반올림한다(점 하나짜리 획은 반올림하지 않는다).
+ *
+ * 크기(실제 판서 A4 한 장, 2427획, 점 35,541개): 예전 기본(midpoint, 30° 분할, 반올림 없음)은 구간 57,726개, 4.71MB였다.
+ * through는 구간을 나눌 일이 거의 없어 구간 33,060개가 되고, 좌표 반올림으로 ZIP 압축이 잘 되어 만년필 약 1.9MB, 붓 약 1.95MB(10진 MB)가 된다.
  */
 export function variableCenterline(points: ReadonlyArray<Point>, radii: ReadonlyArray<number>, options: VariableGeometryOptions = {}): VariableSubpath {
   if (points.length === 0) throw new Error("PATH_EMPTY_POLYLINE");
@@ -725,6 +758,14 @@ export function variableCenterline(points: ReadonlyArray<Point>, radii: Readonly
     const [x, y, r] = pts[0];
     const end: RadiusPoint = [x + (options.dotLength ?? 0.01), y, r];
     return { move: pts[0], quads: [{ c: lerp3(pts[0], end, 0.5), p: end }] };
+  }
+  const curve = options.curve ?? "through";
+  const step = options.coordinateStep ?? VARIABLE_GEOMETRY_DEFAULTS.coordinateStep;
+  if (!(step >= 0)) throw new Error("PATH_BAD_STEP");
+  const maxTurn = options.maxTurn ?? (VARIABLE_GEOMETRY_DEFAULTS.maxTurnDegrees * Math.PI) / 180;
+  if (curve !== "midpoint") {
+    const raw = curve === "polyline" ? polylineQuads(pts) : throughQuads(pts, ((options.cornerDegrees ?? VARIABLE_GEOMETRY_DEFAULTS.cornerDegrees) * Math.PI) / 180);
+    return roundSubpath({ move: pts[0], quads: splitTurns(pts[0], raw, maxTurn) }, step);
   }
   let controls = pts;
   if (options.cornerTolerance !== undefined) {
@@ -749,9 +790,29 @@ export function variableCenterline(points: ReadonlyArray<Point>, radii: Readonly
     const next = controls[k + 1] ?? c;
     raw.push({ c, p: lerp3(c, next, 0.5) });
   }
-  const maxTurn = options.maxTurn ?? Math.PI / 6;
+  return roundSubpath({ move: controls[0], quads: splitTurns(controls[0], raw, maxTurn) }, step);
+}
+
+const snap = (v: number, step: number) => (step > 0 ? Math.round(v / step) * step : v);
+
+/** 반폭은 상대 오차 1/64 이하(간격이 반폭의 1/32 이하)로 반올림한다(가는 획의 굵기가 좌표 간격 때문에 크게 바뀌지 않게). */
+function snapRadius(r: number, step: number): number {
+  if (!(step > 0) || !(r > 0)) return r;
+  const rel = 2 ** (Math.floor(Math.log2(r)) - 5);
+  return snap(r, Math.min(step, rel));
+}
+
+/** 중심선 좌표를 step 간격으로, 반폭을 snapRadius로 반올림한다. */
+function roundSubpath(sp: VariableSubpath, step: number): VariableSubpath {
+  if (!(step > 0)) return sp;
+  const r = (p: RadiusPoint): RadiusPoint => [snap(p[0], step), snap(p[1], step), snapRadius(p[2], step)];
+  return { move: r(sp.move), quads: sp.quads.map(q => ({ c: r(q.c), p: r(q.p) })) };
+}
+
+/** 많이 꺾이는 구간을 de Casteljau로 나눈다(곡선 모양은 그대로). */
+function splitTurns(first: RadiusPoint, raw: ReadonlyArray<VariableQuad>, maxTurn: number): VariableQuad[] {
   const quads: VariableQuad[] = [];
-  let start = controls[0];
+  let start = first;
   const split = (p0: RadiusPoint, q: VariableQuad, depth: number) => {
     const a = [q.c[0] - p0[0], q.c[1] - p0[1]];
     const b = [q.p[0] - q.c[0], q.p[1] - q.c[1]];
@@ -772,7 +833,99 @@ export function variableCenterline(points: ReadonlyArray<Point>, radii: Readonly
     split(start, q, 0);
     start = q.p;
   }
-  return { move: controls[0], quads };
+  return quads;
+}
+
+/** 점 사이를 곧은 구간(제어점 = 가운데)으로 잇는다. */
+function polylineQuads(pts: ReadonlyArray<RadiusPoint>): VariableQuad[] {
+  const out: VariableQuad[] = [];
+  for (let k = 1; k < pts.length; k += 1) out.push({ c: lerp3(pts[k - 1], pts[k], 0.5), p: pts[k] });
+  return out;
+}
+
+const unit = (x: number, y: number): Vec | null => {
+  const l = Math.hypot(x, y);
+  return l > 0 ? [x / l, y / l] : null;
+};
+
+/**
+ * 점을 모두 지나는 2차 Bézier 구간들. 점마다 들어오는 접선과 나가는 접선을 정한다(부드러운 점은 앞뒤 방향의 평균,
+ * 모서리와 열린 끝은 그쪽 구간 방향). 두 점 사이 구간의 제어점은 양 끝 접선의 교점이다. 교점이 구간 밖으로
+ * 멀거나(접선이 현과 45°보다 벌어짐) 없으면(S자) 가운데에서 현 방향 접선으로 나눠 둘로 잇고, 그래도 안 되면 곧게 잇는다.
+ * 반폭은 구간 안에서 선형으로 바뀐다(제어점 반폭 = 양 끝 평균). 처음과 끝 점이 같으면 닫힌 획으로 보고 접선을 이어 붙인다.
+ */
+function throughQuads(pts: ReadonlyArray<RadiusPoint>, corner: number): VariableQuad[] {
+  const n = pts.length;
+  const closed = n > 3 && pts[0][0] === pts[n - 1][0] && pts[0][1] === pts[n - 1][1];
+  const dir = (a: RadiusPoint, b: RadiusPoint) => unit(b[0] - a[0], b[1] - a[1]) as Vec;
+  const cosCorner = Math.cos(corner);
+  // tin[k]: 점 k로 들어오는 접선, tout[k]: 점 k에서 나가는 접선(null이면 정하지 않음)
+  const tin: Array<Vec | null> = new Array(n).fill(null);
+  const tout: Array<Vec | null> = new Array(n).fill(null);
+  for (let k = 0; k < n; k += 1) {
+    let prev: RadiusPoint | null = k > 0 ? pts[k - 1] : null;
+    let next: RadiusPoint | null = k < n - 1 ? pts[k + 1] : null;
+    if (closed && k === 0) prev = pts[n - 2];
+    if (closed && k === n - 1) next = pts[1];
+    if (!prev || !next) continue;
+    const a = dir(prev, pts[k]);
+    const b = dir(pts[k], next);
+    if (a[0] * b[0] + a[1] * b[1] < cosCorner) {
+      tin[k] = a;
+      tout[k] = b;
+      continue;
+    }
+    const t = unit(a[0] + b[0], a[1] + b[1]) ?? b;
+    tin[k] = t;
+    tout[k] = t;
+  }
+  const out: VariableQuad[] = [];
+  const COS_MAX = Math.cos(Math.PI / 4);
+  /** a에서 ta 방향, b로 tb 방향으로 들어가는 2차 Bézier의 제어점. 맞지 않으면 null */
+  const control = (a: RadiusPoint, b: RadiusPoint, ta: Vec | null, tb: Vec | null): RadiusPoint | null => {
+    const ch = dir(a, b);
+    const reflect = (t: Vec): Vec => {
+      const d = 2 * (t[0] * ch[0] + t[1] * ch[1]);
+      return [d * ch[0] - t[0], d * ch[1] - t[1]];
+    };
+    if (!ta && !tb) return lerp3(a, b, 0.5);
+    const u = ta ?? reflect(tb as Vec);
+    const v = tb ?? reflect(ta as Vec);
+    const cu = u[0] * ch[0] + u[1] * ch[1];
+    const cv = v[0] * ch[0] + v[1] * ch[1];
+    if (cu < COS_MAX || cv < COS_MAX) return null;
+    // a + s·u = b − w·v 를 푼다
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const det = u[0] * v[1] - u[1] * v[0];
+    if (Math.abs(det) < 1e-9) {
+      // 접선이 나란하다: 둘 다 현 방향이면 곧은 구간, 아니면(S자) 맞지 않음
+      return Math.abs(u[0] * ch[1] - u[1] * ch[0]) < 1e-6 ? lerp3(a, b, 0.5) : null;
+    }
+    const s = (dx * v[1] - dy * v[0]) / det;
+    const w = (u[0] * dy - u[1] * dx) / det;
+    const len = Math.hypot(dx, dy);
+    if (!(s > 1e-6 * len && w > 1e-6 * len)) return null;
+    return [a[0] + s * u[0], a[1] + s * u[1], (a[2] + b[2]) / 2];
+  };
+  for (let k = 1; k < n; k += 1) {
+    const a = pts[k - 1];
+    const b = pts[k];
+    const ta = tout[k - 1];
+    const tb = tin[k];
+    const c = control(a, b, ta, tb);
+    if (c) {
+      out.push({ c, p: b });
+      continue;
+    }
+    const m = lerp3(a, b, 0.5);
+    const ch = dir(a, b);
+    const c1 = control(a, m, ta, ch);
+    const c2 = control(m, b, ch, tb);
+    if (c1 && c2) out.push({ c: c1, p: m }, { c: c2, p: b });
+    else out.push({ c: m, p: b });
+  }
+  return out;
 }
 
 type Vec = [number, number];
@@ -814,8 +967,11 @@ function cubicAt(a: Vec, c1: Vec, c2: Vec, b: Vec, s: number): Vec {
   ];
 }
 
-/** 옆선 offsetAt(t)를 t0 → t1(감소해도 된다)로 cubic 여러 개로 맞춘다. 끝점은 정확히 옆선 위에 있다. */
-function fitOffsetSide(p0: RadiusPoint, q: VariableQuad, side: 1 | -1, t0: number, t1: number, tolerance: number): OutlineCommand[] {
+/**
+ * 옆선 offsetAt(t)를 t0 → t1(감소해도 된다)로 cubic 여러 개로 맞춘다. 양 끝점은 ends로 받는다(원호와 맞물리는 점).
+ * step > 0이면 cubic 좌표를 그 간격으로 반올림한다.
+ */
+function fitOffsetSide(p0: RadiusPoint, q: VariableQuad, side: 1 | -1, t0: number, t1: number, tolerance: number, ends: [Vec, Vec], step: number): OutlineCommand[] {
   const h = 1e-5;
   const deriv = (t: number): Vec => {
     const ta = Math.max(0, t - h);
@@ -824,53 +980,77 @@ function fitOffsetSide(p0: RadiusPoint, q: VariableQuad, side: 1 | -1, t0: numbe
     const b = offsetAt(p0, q, tb, side);
     return [(b[0] - a[0]) / (tb - ta), (b[1] - a[1]) / (tb - ta)];
   };
+  let out: OutlineCommand[] = [];
   for (let pieces = 1; pieces <= 8; pieces += 1) {
-    const out: OutlineCommand[] = [];
+    out = [];
     let worst = 0;
     for (let k = 0; k < pieces; k += 1) {
       const ta = t0 + ((t1 - t0) * k) / pieces;
       const tb = t0 + ((t1 - t0) * (k + 1)) / pieces;
       const dt = tb - ta;
-      const a = offsetAt(p0, q, ta, side);
-      const b = offsetAt(p0, q, tb, side);
+      const a = k === 0 ? ends[0] : offsetAt(p0, q, ta, side);
+      const b = k === pieces - 1 ? ends[1] : offsetAt(p0, q, tb, side);
       const da = deriv(ta);
       const db = deriv(tb);
       const c1: Vec = [a[0] + (da[0] * dt) / 3, a[1] + (da[1] * dt) / 3];
       const c2: Vec = [b[0] - (db[0] * dt) / 3, b[1] - (db[1] * dt) / 3];
+      const bs: Vec = [snap(b[0], step), snap(b[1], step)];
+      const c1s: Vec = [snap(c1[0], step), snap(c1[1], step)];
+      const c2s: Vec = [snap(c2[0], step), snap(c2[1], step)];
+      const as: Vec = [snap(a[0], step), snap(a[1], step)];
       for (let s = 1; s <= 7; s += 1) {
         const want = offsetAt(p0, q, ta + (dt * s) / 8, side);
-        const got = cubicAt(a, c1, c2, b, s / 8);
+        const got = cubicAt(as, c1s, c2s, bs, s / 8);
         worst = Math.max(worst, Math.hypot(want[0] - got[0], want[1] - got[1]));
       }
-      out.push({ op: "C", c1x: c1[0], c1y: c1[1], c2x: c2[0], c2y: c2[1], x: b[0], y: b[1] });
+      out.push({ op: "C", c1x: c1s[0], c1y: c1s[1], c2x: c2s[0], c2y: c2s[1], x: bs[0], y: bs[1] });
     }
-    if (worst <= tolerance || pieces === 8) return out;
+    if (worst <= tolerance) break;
   }
-  return [];
+  return out;
 }
+
+export type CapsuleOptions = {
+  /** 옆선 cubic 허용 오차(페이지 단위). 기본 0.15 */
+  tolerance?: number;
+  /** 윤곽 좌표 간격(0이면 그대로). 끝점을 반올림하면 원호 시작점과 이 간격의 절반 남짓까지 어긋날 수 있다. */
+  step?: number;
+  /** 끝 원호 각도 간격(라디안, 0이면 그대로). 같은 각도가 되풀이되어 압축이 잘 된다. */
+  angleStep?: number;
+};
 
 /**
  * 중심선 quad 구간 하나의 닫힌 캡슐 윤곽. 굿노트 자체 파일의 순서를 따른다:
  * 왼쪽 옆선 시작점으로 move, 왼쪽 옆선 cubic, 끝 원호(끝점 중심, 반폭, 시계 방향 표시, 각도 π 감소),
  * 오른쪽 옆선을 거꾸로 cubic, 시작 원호(시작점 중심, 각도 π 감소). 마지막 원호가 처음 move 점에서 끝난다.
+ * 옆선의 양 끝은 원호 각도에서 계산하므로(각도를 반올림해도) 원호와 옆선이 같은 점에서 만난다.
  */
-export function quadCapsuleOutline(p0: RadiusPoint, q: VariableQuad, tolerance = 0.1): OutlineCommand[] {
-  const out: OutlineCommand[] = [];
-  const left0 = offsetAt(p0, q, 0, 1);
-  out.push({ op: "M", x: left0[0], y: left0[1] });
-  out.push(...fitOffsetSide(p0, q, 1, 0, 1, tolerance));
+export function quadCapsuleOutline(p0: RadiusPoint, q: VariableQuad, tolerance: number | CapsuleOptions = VARIABLE_GEOMETRY_DEFAULTS.tolerance): OutlineCommand[] {
+  const o: CapsuleOptions = typeof tolerance === "number" ? { tolerance } : tolerance;
+  const tol = o.tolerance ?? VARIABLE_GEOMETRY_DEFAULTS.tolerance;
+  const step = o.step ?? 0;
+  const g = o.angleStep ?? 0;
+  const qa = (a: number) => (g > 0 ? Math.round(a / g) * g : a);
   const [t1x, t1y] = quadTangent(p0, q, 1);
-  const endStart = Math.atan2(t1x, -t1y); // +n = (-ty, tx)의 각도
-  out.push({ op: "A", cx: q.p[0], cy: q.p[1], r: q.p[2], a0: endStart, a1: endStart - Math.PI, clockwise: true });
-  out.push(...fitOffsetSide(p0, q, -1, 1, 0, tolerance));
+  const endStart = qa(Math.atan2(t1x, -t1y)); // +n = (-ty, tx)의 각도
   const [t0x, t0y] = quadTangent(p0, q, 0);
-  const startStart = Math.atan2(-t0x, t0y); // -n = (ty, -tx)의 각도
+  const startStart = qa(Math.atan2(-t0x, t0y)); // -n = (ty, -tx)의 각도
+  const at = (c: RadiusPoint, a: number): Vec => [c[0] + c[2] * Math.cos(a), c[1] + c[2] * Math.sin(a)];
+  const left0 = at(p0, startStart - Math.PI);
+  const left1 = at(q.p, endStart);
+  const right1 = at(q.p, endStart - Math.PI);
+  const right0 = at(p0, startStart);
+  const out: OutlineCommand[] = [];
+  out.push({ op: "M", x: snap(left0[0], step), y: snap(left0[1], step) });
+  out.push(...fitOffsetSide(p0, q, 1, 0, 1, tol, [left0, left1], step));
+  out.push({ op: "A", cx: q.p[0], cy: q.p[1], r: q.p[2], a0: endStart, a1: endStart - Math.PI, clockwise: true });
+  out.push(...fitOffsetSide(p0, q, -1, 1, 0, tol, [right1, right0], step));
   out.push({ op: "A", cx: p0[0], cy: p0[1], r: p0[2], a0: startStart, a1: startStart - Math.PI, clockwise: true });
   return out;
 }
 
 /** 중심선 하위 경로의 quad마다 캡슐 윤곽을 만든다(윤곽 수 = quad 수). */
-export function variableOutlines(centerline: ReadonlyArray<VariableSubpath>, tolerance = 0.1): OutlineCommand[][] {
+export function variableOutlines(centerline: ReadonlyArray<VariableSubpath>, tolerance: number | CapsuleOptions = VARIABLE_GEOMETRY_DEFAULTS.tolerance): OutlineCommand[][] {
   const out: OutlineCommand[][] = [];
   for (const sp of centerline) {
     let start = sp.move;
@@ -885,7 +1065,7 @@ export function variableOutlines(centerline: ReadonlyArray<VariableSubpath>, tol
 /** 점과 지름(페이지 단위)으로 만년필이나 붓 경로 전체(중심선 + 윤곽)를 만든다. 반폭 = 지름 / 2. */
 export function buildVariablePen(kind: VariablePenKind, points: ReadonlyArray<Point>, diameters: ReadonlyArray<number>, options: VariableGeometryOptions = {}): VariablePen {
   const centerline = [variableCenterline(points, diameters.map(d => d / 2), options)];
-  return { kind, version: VARIABLE_PEN_DEFAULTS.version, defaultRadius: kind === "brush" ? VARIABLE_PEN_DEFAULTS.brushDefaultRadius : null, centerline, outlines: variableOutlines(centerline, options.tolerance) };
+  return { kind, version: VARIABLE_PEN_DEFAULTS.version, defaultRadius: kind === "brush" ? VARIABLE_PEN_DEFAULTS.brushDefaultRadius : null, centerline, outlines: variableOutlines(centerline, { tolerance: options.tolerance, step: options.outlineStep ?? VARIABLE_GEOMETRY_DEFAULTS.outlineStep, angleStep: options.angleStep ?? VARIABLE_GEOMETRY_DEFAULTS.angleStep }) };
 }
 
 /** 윤곽 하위 경로를 폴리곤 점으로 펼친다(미리보기, 검증용). 원호는 굿노트 규칙(clockwise = 각도 감소)으로 그린다. */

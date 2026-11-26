@@ -206,8 +206,8 @@ export function inkPreviewFrame(ink: ExportInk) {
 }
 
 /**
- * 미리보기용: 만년필, 붓 획의 채움 경로(SVG d, nonzero 규칙)를 색마다 하나씩. 파일과 같은 중심선(variableCenterline,
- * 중점 2차 Bézier와 반폭)을 따라 점마다 반폭 원을 잇는 외접선 윤곽을 획마다 닫힌 하위 경로 하나로 만든다. 바깥 모서리는
+ * 미리보기용: 만년필, 붓 획의 채움 경로(SVG d, nonzero 규칙)를 색마다 하나씩. 파일과 같은 중심선(variableCenterline의
+ * 기본값, 2026-11-27부터 입력 점을 지나는 2차 Bézier와 반폭)을 따라 점마다 반폭 원을 잇는 외접선 윤곽을 획마다 닫힌 하위 경로 하나로 만든다. 바깥 모서리는
  * 원호, 안쪽 모서리는 가운데 점을 거쳐(스트로커의 안쪽 이음) 겹치는 곳의 감김 방향이 같아 구멍이 생기지 않는다.
  * 좌표는 frame 원점 기준 0.25단위(휴대폰 화면 약 0.1px)로 반올림한 상대 좌표다. 크기는 scripts/goodnotes-export.test.mjs 참고.
  */
