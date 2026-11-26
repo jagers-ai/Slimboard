@@ -100,7 +100,7 @@ test('윤곽은 A4 가로 페이지 단위의 볼펜 획이 되고 사진 영역
   const outline = { width: 1600, height: 1200, shapes: [
     { color: 'blue', rings: [[[100, 590], [1500, 590], [1500, 610], [100, 610]]], area: 28000, strokeWidth: 20 },
   ] };
-  const ink = outlineToInk(outline, B);
+  const ink = outlineToInk(outline, B, 'ballpoint');
   assert.equal(ink.width, 1600);
   assert.equal(ink.height, 1200);
   assert.deepEqual(ink.setup, B);
@@ -143,7 +143,7 @@ test('굵기는 0.35~6pt로 자르고, 윤곽에서 만든 획도 그 범위 안
       { color: 'black', rings: [[[100, 100], [900, 100], [900, 101], [100, 101]]], area: 800, strokeWidth: 1 },
       { color: 'red', rings: [[[100, 300], [1300, 300], [1300, 380], [100, 380]]], area: 96000, strokeWidth: 80 },
     ] };
-    const widths = outlineToInk(outline, setup).strokes.map(stroke => stroke.width / u);
+    const widths = outlineToInk(outline, setup, 'ballpoint').strokes.map(stroke => stroke.width / u);
     assert.ok(widths.length >= 2);
     for (const pt of widths) assert.ok(pt >= GOODNOTES_EXPORT_MIN_PEN_PT - 1e-9 && pt <= GOODNOTES_EXPORT_MAX_PEN_PT + 1e-9, `${pt}pt`);
     // 작은 글씨 굵기(2px 선)는 하한에 걸리지 않고 선보다 굵게 그리지 않는다.
@@ -151,7 +151,7 @@ test('굵기는 0.35~6pt로 자르고, 윤곽에서 만든 획도 그 범위 안
       { color: 'black', rings: [[[100, 100], [900, 100], [900, 102], [100, 102]]], area: 1600, strokeWidth: 2 },
     ] };
     const lineUnits = 2 * inkPageLayout(thin, setup).fit.scale;
-    for (const stroke of outlineToInk(thin, setup).strokes) {
+    for (const stroke of outlineToInk(thin, setup, 'ballpoint').strokes) {
       assert.ok(stroke.width > GOODNOTES_EXPORT_MIN_PEN_PT * u + 1e-9, `${stroke.width / u}pt`);
       assert.ok(stroke.width <= lineUnits + 1e-9, `펜 ${stroke.width / u}pt, 선 ${lineUnits / u}pt`);
     }
@@ -256,7 +256,7 @@ test('합성 사진의 글씨가 윤곽, 볼펜 획, 파일, 되읽기를 거쳐
     [680, 470, 700, 470, 3, 'blue'], [740, 490, 744, 491, 3.5, 'red'], [200, 500, 260, 540, 3, 'black'],
   ];
   const pixels = board(900, 600, lines);
-  const ink = readInk(pixels);
+  const ink = readInk(pixels, 'ballpoint');
   assert.equal(ink.width, 900);
   assert.equal(ink.height, 600);
   assert.ok(ink.strokes.length >= lines.length, `획 ${ink.strokes.length}개`);
@@ -297,19 +297,26 @@ test('합성 사진의 글씨가 윤곽, 볼펜 획, 파일, 되읽기를 거쳐
 // ---------------------------------------------------------------------------
 // 펜 종류(볼펜 채움, 만년필, 붓)
 
-test('기본 펜 종류는 볼펜이고 readInk와 outlineToInk가 이를 따른다', () => {
-  // 만년필과 붓은 굿노트 실기기 확인 전이라 기본값은 볼펜이다.
-  assert.equal(GOODNOTES_EXPORT_PEN, 'ballpoint');
+test('기본 펜 종류는 만년필이고 readInk와 outlineToInk가 이를 따른다', () => {
+  // 2026-11-27 사용자가 만년필로 정했다.
+  assert.equal(GOODNOTES_EXPORT_PEN, 'fountain');
   const outline = { width: 1600, height: 1200, shapes: [
     { color: 'blue', rings: [[[100, 590], [1500, 590], [1500, 610], [100, 610]]], area: 28000, strokeWidth: 20 },
   ] };
-  for (const stroke of outlineToInk(outline).strokes) {
-    assert.ok(stroke.pen === undefined || stroke.pen === 'ballpoint');
-    assert.ok(Number.isFinite(stroke.width));
+  const strokes = outlineToInk(outline).strokes;
+  assert.ok(strokes.length > 0);
+  for (const stroke of strokes) {
+    assert.equal(stroke.pen, 'fountain');
+    assert.equal(stroke.widths.length, stroke.points.length);
   }
   const ink = readInk(board(300, 200, [[40, 100, 260, 100, 6, 'black']]));
   assert.ok(ink.strokes.length > 0);
-  for (const stroke of ink.strokes) assert.ok(stroke.pen === undefined && !('widths' in stroke));
+  for (const stroke of ink.strokes) assert.equal(stroke.pen, 'fountain');
+  // 볼펜 채움은 인자로 고를 수 있다.
+  for (const stroke of outlineToInk(outline, undefined, 'ballpoint').strokes) {
+    assert.ok(stroke.pen === undefined || stroke.pen === 'ballpoint');
+    assert.ok(Number.isFinite(stroke.width));
+  }
 });
 
 test('만년필과 붓: 윤곽은 점마다 지름을 가진 획이 되고 지름은 0.35~6pt 안이다', () => {

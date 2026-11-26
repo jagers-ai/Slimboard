@@ -62,10 +62,10 @@ export const GOODNOTES_EXPORT_MAX_PEN_PT = 6;
  * - "ballpoint": 글씨 윤곽을 균일 굵기 볼펜 획 여러 줄로 채운다(시험 파일 D2 방식).
  * - "fountain", "brush": 글씨 가운데 선에 점마다 굵기를 준 만년필(f3 1), 붓(f3 4) 획 하나로 옮긴다.
  *   실제 판서 재구성 IoU 0.918(볼펜 0.898)이고 획 수가 적어 지우개, 올가미가 글자 단위로 먹는다.
- * 기본값은 "ballpoint"(2026-11-27). 만년필과 붓 파일이 굿노트 실기기에서 열리고 제 모양으로 보이는지 아직 확인하지
- * 않았다. 실기기에서 확인되면 이 한 줄만 "fountain"이나 "brush"로 바꾼다(Worker와 미리보기는 이 값을 따른다).
+ * 기본값은 "fountain"(2026-11-27 사용자가 볼펜, 만년필, 붓 실제 판서 시험 파일을 받아 보고 만년필로 정함).
+ * 볼펜 채움보다 사진의 굵기 변화와 작은 글씨 모양이 가깝다. 바꾸려면 이 한 줄만 고친다(Worker와 미리보기는 이 값을 따른다).
  */
-export const GOODNOTES_EXPORT_PEN: ExportPen = "ballpoint";
+export const GOODNOTES_EXPORT_PEN: ExportPen = "fountain";
 
 export const GOODNOTES_EXPORT_TYPE = "application/zip";
 export const GOODNOTES_EXPORT_EXTENSION = ".goodnotes";
