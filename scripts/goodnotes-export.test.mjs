@@ -128,7 +128,10 @@ test('윤곽은 A4 가로 페이지 단위의 볼펜 획이 되고 사진 영역
   assert.deepEqual(page.strokes[0].color, INK_PDF_COLORS.blue);
 });
 
-test('굵기는 0.8~6pt로 자르고, 윤곽에서 만든 획도 그 범위 안이다', () => {
+test('굵기는 0.35~6pt로 자르고, 윤곽에서 만든 획도 그 범위 안이다', () => {
+  // 하한이 높으면 작은 글씨가 사진보다 굵어진다(0.8pt에서 실제 판서 덩어리의 절반 넘게 걸렸다).
+  close(GOODNOTES_EXPORT_MIN_PEN_PT, 0.35);
+  close(GOODNOTES_EXPORT_MAX_PEN_PT, 6);
   for (const setup of [A, B]) {
     const u = setup.unitsPerPt;
     close(inkPenWidth(0.1, setup), GOODNOTES_EXPORT_MIN_PEN_PT * u);
@@ -143,6 +146,15 @@ test('굵기는 0.8~6pt로 자르고, 윤곽에서 만든 획도 그 범위 안�
     const widths = outlineToInk(outline, setup).strokes.map(stroke => stroke.width / u);
     assert.ok(widths.length >= 2);
     for (const pt of widths) assert.ok(pt >= GOODNOTES_EXPORT_MIN_PEN_PT - 1e-9 && pt <= GOODNOTES_EXPORT_MAX_PEN_PT + 1e-9, `${pt}pt`);
+    // 작은 글씨 굵기(2px 선)는 하한에 걸리지 않고 선보다 굵게 그리지 않는다.
+    const thin = { width: 1600, height: 1200, shapes: [
+      { color: 'black', rings: [[[100, 100], [900, 100], [900, 102], [100, 102]]], area: 1600, strokeWidth: 2 },
+    ] };
+    const lineUnits = 2 * inkPageLayout(thin, setup).fit.scale;
+    for (const stroke of outlineToInk(thin, setup).strokes) {
+      assert.ok(stroke.width > GOODNOTES_EXPORT_MIN_PEN_PT * u + 1e-9, `${stroke.width / u}pt`);
+      assert.ok(stroke.width <= lineUnits + 1e-9, `펜 ${stroke.width / u}pt, 선 ${lineUnits / u}pt`);
+    }
   }
 });
 

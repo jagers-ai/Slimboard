@@ -41,10 +41,15 @@ export const BACKGROUND_UNITS_PER_PT = GOODNOTES_UNITS_PER_PT;
 export const GOODNOTES_EXPORT_MARGIN = 0.04;
 /**
  * 펜 굵기 하한과 상한(pt). 단위를 바꿔도 종이 위 굵기가 같도록 pt로 정하고 페이지 단위로 바꾼다.
- * 하한 0.8pt(약 0.28mm)는 PDF로 보내던 때와 같고 가는 볼펜 정도다. 이보다 가늘면 쪽 전체 보기에서
- * 흐린 사진의 가는 획이 끊겨 보인다. 상한 6pt는 보드 테두리나 번진 자국이 굵은 띠로 남지 않게 한다.
+ * 하한 0.35pt(약 0.12mm, 2026-11-26): 처음에는 PDF로 보내던 때와 같은 0.8pt였다(쪽 전체 보기에서 흐린 가는 획이
+ * 끊겨 보이지 않게). 아이패드에서 작은 글씨가 사진보다 굵어 보여 낮췄다. 실제 판서 윤곽 1118덩어리(A4, 사진 1px
+ * = 0.365pt) 측정: 0.8pt는 630덩어리가 하한에 걸려 되읽은 모양 IoU 0.869, 가는 글씨 구역 IoU 0.63~0.73이다.
+ * 0.35pt는 걸리는 덩어리 42개(획 굵기 약 1.2px 이하), IoU 0.898로 하한이 없을 때(0.898)와 같고,
+ * 점은 15% 늘며(4.96만 → 5.75만) 파일은 512KB → 578KB, 채움 시간과 메모리는 그대로다(격자는 획 굵기로 정한다).
+ * 0.25pt, 0.15pt는 IoU가 더 오르지 않으면서 쪽 전체 보기에서 화면 1px보다 가늘어질 수 있어(어림, 실기기 미확인) 0.35pt로 둔다.
+ * 상한 6pt는 보드 테두리나 번진 자국이 굵은 띠로 남지 않게 한다.
  */
-export const GOODNOTES_EXPORT_MIN_PEN_PT = 0.8;
+export const GOODNOTES_EXPORT_MIN_PEN_PT = 0.35;
 export const GOODNOTES_EXPORT_MAX_PEN_PT = 6;
 
 export const GOODNOTES_EXPORT_TYPE = "application/zip";
@@ -76,7 +81,7 @@ export function inkPageLayout(photo: { width: number; height: number }, setup: G
   return { page, margin, fit };
 }
 
-/** 펜 굵기(페이지 단위)를 0.8~6pt 범위로 자른다. */
+/** 펜 굵기(페이지 단위)를 하한~상한(0.35~6pt) 범위로 자른다. */
 export function inkPenWidth(width: number, setup: GoodnotesExportSetup) {
   const min = GOODNOTES_EXPORT_MIN_PEN_PT * setup.unitsPerPt;
   const max = GOODNOTES_EXPORT_MAX_PEN_PT * setup.unitsPerPt;
@@ -91,7 +96,7 @@ export function inkPenColor(color: InkPdfColor): readonly [number, number, numbe
 
 /**
  * 윤곽을 1쪽의 볼펜 획으로 바꾼다(lib/goodnotes-fill.ts, 시험 파일 D2 방식). 덩어리 하나가 획 하나 이상이 되어
- * 굿노트에서 지우개 한 번에 지워지고 올가미로 덩어리째 옮겨진다. 굵기 저장값은 0.8~6pt 안에서 계획한다.
+ * 굿노트에서 지우개 한 번에 지워지고 올가미로 덩어리째 옮겨진다. 굵기 저장값은 0.35~6pt 안에서 계획한다.
  * 실제 판서 사진에서 1초 안팎이 걸려 Worker에서 부른다(lib/goodnotes-ink.ts).
  */
 export function outlineToInk(outline: ExportOutline, setup: GoodnotesExportSetup = GOODNOTES_EXPORT_SETUP): ExportInk {

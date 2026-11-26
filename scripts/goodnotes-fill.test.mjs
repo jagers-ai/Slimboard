@@ -319,7 +319,7 @@ test('1000 덩어리를 A4 한 쪽에 넣어도 파일이 2MB 이하다', async 
   for (let row = 0; row < 25; row += 1) for (let col = 0; col < 4; col += 1) for (const s of glyphShapes(40, 30 + col * 250, 30 + row * 80)) shapes.push(s);
   assert.equal(shapes.length, 1000);
   const fit = { scale: 1000 / 1500, offsetX: 20, offsetY: 20 };
-  const strokes = fillShapesWithPen(shapes, { fit, minPenWidth: 0.8 * U, maxPenWidth: 6 * U });
+  const strokes = fillShapesWithPen(shapes, { fit, minPenWidth: 0.35 * U, maxPenWidth: 6 * U });
   assert.ok(new Set(strokes.map(s => s.shape)).size === 1000);
   const { bytes } = await roundTrip(strokes);
   assert.ok(bytes.length <= 2 * 1024 * 1024, `${bytes.length} bytes`);
