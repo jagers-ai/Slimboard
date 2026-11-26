@@ -101,6 +101,7 @@ function InkPaper({ preview }: { preview: GoodnotesFile["preview"] }) {
   return <svg className="goodnotes-paper" role="img" aria-label="사진에서 옮긴 글씨"
     viewBox={`0 0 ${preview.width} ${preview.height}`}
     style={{ "--paper-ratio": preview.width / preview.height } as React.CSSProperties}>
+    {preview.fills.map((fill, index) => <path key={`fill-${index}`} d={fill.d} fill={fill.color} />)}
     {preview.paths.map((path, index) => <path key={index} d={path.d} fill="none" stroke={path.color}
       strokeWidth={path.width} strokeLinecap="round" strokeLinejoin="round" />)}
   </svg>;

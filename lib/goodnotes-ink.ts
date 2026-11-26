@@ -1,11 +1,15 @@
 // Reads the handwriting of a decoded photo as Goodnotes pen strokes: outlines
-// (./ink-outline) filled with pen strokes on the page (./goodnotes-export-format).
+// (./ink-outline) turned into strokes of the chosen pen on the page (./goodnotes-export-format):
+// ballpoint strokes filling each shape, or one fountain or brush stroke of varying width.
 // Runs in the export worker and, where a worker cannot draw, on the page itself.
 import { extractInkOutlines } from "./ink-outline.ts";
-import { outlineToInk, type ExportInk } from "./goodnotes-export-format.ts";
+import { GOODNOTES_EXPORT_PEN, GOODNOTES_EXPORT_SETUP, outlineToInk, type ExportInk, type ExportPen } from "./goodnotes-export-format.ts";
 
 export type InkPixels = { width: number; height: number; data: Uint8ClampedArray };
 export type Ink = ExportInk;
+export type InkPen = ExportPen;
+/** What the page posts to the export worker. */
+export type InkRequest = { photo: Blob; pen: InkPen };
 export type InkReply =
   | { status: "done"; ink: Ink }
   | { status: "unsupported" }
@@ -43,9 +47,12 @@ export function readInkPixels(
   }
 }
 
-/** Outlines, then pen strokes in page units. Both steps run here, never on the main thread when a worker exists. */
-export function readInk(pixels: InkPixels): Ink {
+/**
+ * Outlines, then strokes of `pen` in page units. Both steps run here, never on the main thread when a worker exists.
+ * The pen defaults to GOODNOTES_EXPORT_PEN.
+ */
+export function readInk(pixels: InkPixels, pen: InkPen = GOODNOTES_EXPORT_PEN): Ink {
   const outline = extractInkOutlines(pixels, { maxSide: INK_LONG_SIDE });
   if (outline.truncated) console.warn("Goodnotes export: small ink shapes dropped over the shape or point limit");
-  return outlineToInk(outline);
+  return outlineToInk(outline, GOODNOTES_EXPORT_SETUP, pen);
 }

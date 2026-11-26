@@ -4,13 +4,17 @@
 // Vinext rewrites import.meta.url in browser chunks, so `new URL(..., import.meta.url)`
 // builds the worker but cannot load it. Take the emitted address instead.
 import workerUrl from "./goodnotes-export.worker.ts?worker&url";
-import { readInk, readInkPixels, type Ink, type InkReply } from "./goodnotes-ink";
+import { readInk, readInkPixels, type Ink, type InkPen, type InkReply, type InkRequest } from "./goodnotes-ink";
 import {
+  GOODNOTES_EXPORT_PEN,
   GOODNOTES_EXPORT_TYPE,
   buildGoodnotesExport,
   goodnotesFileName,
   inkPreviewColor,
+  inkPreviewFillPaths,
   inkPreviewFrame,
+  isVariableExportStroke,
+  type ExportVariableStroke,
 } from "./goodnotes-export-format";
 
 // The file format, its profile and page units are decided only in ./goodnotes-export-format.ts.
@@ -24,6 +28,7 @@ const format = {
   /** Where the photo sits on page 1 and the pen colors, for the preview. */
   frame: inkPreviewFrame,
   color: inkPreviewColor,
+  fills: inkPreviewFillPaths,
 };
 
 // randomUUID exists only in secure contexts; without it the module seeds from the input.
@@ -31,8 +36,16 @@ function newSeed() {
   try { return globalThis.crypto?.randomUUID?.(); } catch { return undefined; }
 }
 
-/** One path per color and pen width, in the coordinates of `width` x `height` (the photo's area on page 1). */
-export type GoodnotesPreview = { width: number; height: number; paths: Array<{ d: string; color: string; width: number }> };
+/**
+ * In the coordinates of `width` x `height` (the photo's area on page 1): `paths` are stroked lines, one per color and
+ * pen width (ballpoint); `fills` are filled outlines, one per color (fountain and brush, whose width changes per point).
+ */
+export type GoodnotesPreview = {
+  width: number;
+  height: number;
+  paths: Array<{ d: string; color: string; width: number }>;
+  fills: Array<{ d: string; color: string }>;
+};
 /** The screen shares or saves `file` and draws `preview` without knowing the format. */
 export type GoodnotesFile = { file: File; preview: GoodnotesPreview };
 export type GoodnotesFailure = "photo-missing" | "photo" | "ink";
@@ -48,12 +61,12 @@ export class GoodnotesExportError extends Error {
 
 const workerTimeout = 60_000;
 
-/** Null means the photo holds no handwriting. Aborting rejects and stops the worker. */
-export async function prepareGoodnotesFile({ photoUrl, title, signal }: {
-  photoUrl: string; title: string; signal: AbortSignal;
+/** Null means the photo holds no handwriting. Aborting rejects and stops the worker. The pen defaults to GOODNOTES_EXPORT_PEN. */
+export async function prepareGoodnotesFile({ photoUrl, title, signal, pen = GOODNOTES_EXPORT_PEN }: {
+  photoUrl: string; title: string; signal: AbortSignal; pen?: InkPen;
 }): Promise<GoodnotesFile | null> {
   const photo = await loadPhoto(photoUrl, signal);
-  const ink = await readInWorker(photo, signal) ?? await readOnPage(photo, signal);
+  const ink = await readInWorker(photo, pen, signal) ?? await readOnPage(photo, pen, signal);
   if (!ink.strokes.length) return null;
   try {
     const bytes = await format.write(ink, title, photo);
@@ -70,8 +83,10 @@ export async function prepareGoodnotesFile({ photoUrl, title, signal }: {
 function previewInk(ink: Ink): GoodnotesPreview {
   const frame = format.frame(ink);
   const paths = new Map<string, { color: string; width: number; parts: string[] }>();
+  const variable: ExportVariableStroke[] = [];
   for (const stroke of ink.strokes) {
     if (!stroke.points.length) continue;
+    if (isVariableExportStroke(stroke)) { variable.push(stroke); continue; }
     const color = format.color(stroke.color);
     const width = Math.round(stroke.width * 4) / 4;
     const key = `${color} ${width}`;
@@ -83,11 +98,12 @@ function previewInk(ink: Ink): GoodnotesPreview {
     width: frame.width,
     height: frame.height,
     paths: [...paths.values()].map(({ color, width, parts }) => ({ d: parts.join(""), color, width })),
+    fills: format.fills(variable, frame).map(({ color, d }) => ({ color: format.color(color), d })),
   };
 }
 
 // About 50,000 points per photo: half-unit steps (about 0.2 px on screen) in relative moves keep the path short.
-function strokePath(points: Ink["strokes"][number]["points"], frame: { x: number; y: number }) {
+function strokePath(points: ReadonlyArray<readonly [number, number]>, frame: { x: number; y: number }) {
   let lastX = snap(points[0][0] - frame.x);
   let lastY = snap(points[0][1] - frame.y);
   let d = `M${lastX} ${lastY}l`;
@@ -121,7 +137,7 @@ async function loadPhoto(url: string, signal: AbortSignal) {
 }
 
 /** Null when this browser cannot read the photo in a worker. */
-function readInWorker(photo: Blob, signal: AbortSignal) {
+function readInWorker(photo: Blob, pen: InkPen, signal: AbortSignal) {
   return new Promise<Ink | null>((resolve, reject) => {
     if (signal.aborted) { reject(signal.reason); return; }
     if (typeof Worker === "undefined") { resolve(null); return; }
@@ -152,11 +168,11 @@ function readInWorker(photo: Blob, signal: AbortSignal) {
       else if (reply.status === "unsupported") resolve(null);
       else reject(new GoodnotesExportError(reply.step, reply.detail));
     });
-    worker.postMessage(photo);
+    worker.postMessage({ photo, pen } satisfies InkRequest);
   });
 }
 
-async function readOnPage(photo: Blob, signal: AbortSignal) {
+async function readOnPage(photo: Blob, pen: InkPen, signal: AbortSignal) {
   const url = URL.createObjectURL(photo);
   const image = new Image();
   let pixels;
@@ -174,7 +190,7 @@ async function readOnPage(photo: Blob, signal: AbortSignal) {
   signal.throwIfAborted();
   try {
     if (!pixels) throw new Error("2D canvas unavailable");
-    return readInk(pixels);
+    return readInk(pixels, pen);
   } catch (error) {
     throw new GoodnotesExportError("ink", error);
   }

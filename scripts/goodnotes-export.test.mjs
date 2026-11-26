@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   A4_PT, GOODNOTES_UNITS_PER_PT, KIND_STROKE, appleLz4Decode, decodeTpl, decodeUniformPen, listTemplatePages,
-  pageObjects, readZip, readZipFiles, buildSolidJpeg, renderPenSubpath, strokeInfo,
+  pageObjects, readZip, readZipFiles, buildSolidJpeg, renderPenSubpath, strokeInfo, variablePenOf,
 } from '../lib/goodnotes-file.ts';
 import { INK_PDF_COLORS } from '../lib/ink-pdf.ts';
 import {
   GOODNOTES_EXPORT_EXTENSION, GOODNOTES_EXPORT_MARGIN, GOODNOTES_EXPORT_MAX_PEN_PT, GOODNOTES_EXPORT_MIN_PEN_PT,
-  GOODNOTES_EXPORT_SETUP, GOODNOTES_EXPORT_TYPE, buildGoodnotesExport, goodnotesFileName, inkPage, inkPageLayout,
-  inkPenWidth, inkPreviewColor, inkPreviewFrame, outlineToInk, photoPage,
+  GOODNOTES_EXPORT_PEN, GOODNOTES_EXPORT_SETUP, GOODNOTES_EXPORT_TYPE, buildGoodnotesExport, goodnotesFileName, inkPage,
+  inkPageLayout, inkPenWidth, inkPreviewColor, inkPreviewFillPaths, inkPreviewFrame, outlineToInk, photoPage,
 } from '../lib/goodnotes-export-format.ts';
 import { readInk } from '../lib/goodnotes-ink.ts';
 
@@ -292,4 +292,160 @@ test('합성 사진의 글씨가 윤곽, 볼펜 획, 파일, 되읽기를 거쳐
   }
   // 빈 보드는 획이 없다(화면은 글씨 없음으로 안내한다).
   assert.equal(readInk(board(600, 400, [])).strokes.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// 펜 종류(볼펜 채움, 만년필, 붓)
+
+test('기본 펜 종류는 볼펜이고 readInk와 outlineToInk가 이를 따른다', () => {
+  // 만년필과 붓은 굿노트 실기기 확인 전이라 기본값은 볼펜이다.
+  assert.equal(GOODNOTES_EXPORT_PEN, 'ballpoint');
+  const outline = { width: 1600, height: 1200, shapes: [
+    { color: 'blue', rings: [[[100, 590], [1500, 590], [1500, 610], [100, 610]]], area: 28000, strokeWidth: 20 },
+  ] };
+  for (const stroke of outlineToInk(outline).strokes) {
+    assert.ok(stroke.pen === undefined || stroke.pen === 'ballpoint');
+    assert.ok(Number.isFinite(stroke.width));
+  }
+  const ink = readInk(board(300, 200, [[40, 100, 260, 100, 6, 'black']]));
+  assert.ok(ink.strokes.length > 0);
+  for (const stroke of ink.strokes) assert.ok(stroke.pen === undefined && !('widths' in stroke));
+});
+
+test('만년필과 붓: 윤곽은 점마다 지름을 가진 획이 되고 지름은 0.35~6pt 안이다', () => {
+  const outline = { width: 1600, height: 1200, shapes: [
+    { color: 'black', rings: [[[100, 100], [900, 100], [900, 101], [100, 101]]], area: 800, strokeWidth: 1 },
+    { color: 'red', rings: [[[100, 300], [1300, 300], [1300, 380], [100, 380]]], area: 96000, strokeWidth: 80 },
+    { color: 'blue', rings: [[[100, 600], [1300, 600], [1300, 612], [100, 612]]], area: 14400, strokeWidth: 12 },
+  ] };
+  for (const pen of ['fountain', 'brush']) {
+    for (const setup of [A, B]) {
+      const u = setup.unitsPerPt;
+      const ink = outlineToInk(outline, setup, pen);
+      const colorsSeen = new Set(ink.strokes.map(stroke => stroke.color));
+      assert.deepEqual([...colorsSeen].sort(), ['black', 'blue', 'red'], '덩어리마다 획이 남는다');
+      for (const stroke of ink.strokes) {
+        assert.equal(stroke.pen, pen);
+        assert.equal(stroke.widths.length, stroke.points.length);
+        for (const w of stroke.widths) assert.ok(w >= GOODNOTES_EXPORT_MIN_PEN_PT * u - 1e-9 && w <= GOODNOTES_EXPORT_MAX_PEN_PT * u + 1e-9, `${pen} ${w / u}pt`);
+      }
+      // 12px 막대는 지름이 막대 굵기(페이지 단위) 가까이다.
+      const bar = 12 * inkPageLayout(outline, setup).fit.scale;
+      const blue = ink.strokes.filter(stroke => stroke.color === 'blue').flatMap(stroke => stroke.widths);
+      const mid = blue.slice().sort((a, b) => a - b)[Math.floor(blue.length / 2)];
+      assert.ok(Math.abs(mid - bar) < bar * 0.25, `지름 ${mid}, 막대 ${bar}`);
+    }
+  }
+});
+
+test('1쪽은 가변 굵기 획을 그대로 넘기고 범위 밖 지름은 자른다', () => {
+  const u = B.unitsPerPt;
+  const ink = { width: 1600, height: 1200, setup: B, strokes: [
+    { pen: 'fountain', points: [[100, 100], [200, 120], [300, 100]], widths: [0.01, 3 * u, 1000], color: 'red' },
+    { pen: 'brush', points: [[400, 400]], widths: [Number.NaN], color: 'blue' },
+    { pen: 'brush', points: [], widths: [], color: 'blue' },
+    { points: [[500, 500], [600, 500]], width: 2 * u, color: 'black' },
+  ] };
+  const { page } = inkPage(ink);
+  assert.equal(page.strokes.length, 3, '점이 없는 획은 뺀다');
+  const [fountain, brush, ball] = page.strokes;
+  assert.equal(fountain.pen, 'fountain');
+  assert.deepEqual(fountain.points, ink.strokes[0].points);
+  assert.deepEqual(fountain.widths, [GOODNOTES_EXPORT_MIN_PEN_PT * u, 3 * u, GOODNOTES_EXPORT_MAX_PEN_PT * u]);
+  assert.deepEqual(fountain.color, INK_PDF_COLORS.red);
+  assert.equal(brush.pen, 'brush');
+  assert.deepEqual(brush.widths, [GOODNOTES_EXPORT_MIN_PEN_PT * u]);
+  assert.equal(ball.pen, undefined);
+  close(ball.width, 2 * u);
+});
+
+for (const pen of ['fountain', 'brush']) {
+  test(`합성 사진의 글씨가 ${pen === 'fountain' ? '만년필' : '붓'} 획, 파일, 되읽기를 거쳐도 사라지지 않는다`, async () => {
+    const lines = [
+      // [x0, y0, x1, y1, 굵기, 색]: 큰 글씨, 작은 글씨(굵기 3px), 점 같은 짧은 획, 보드에 쓰는 3색
+      [100, 120, 700, 140, 8, 'black'], [120, 220, 120, 420, 6, 'blue'], [300, 260, 520, 420, 5, 'red'],
+      [600, 260, 800, 300, 5, 'blue'], [560, 480, 590, 480, 3, 'black'], [620, 470, 640, 500, 3, 'black'],
+      [680, 470, 700, 470, 3, 'blue'], [740, 490, 744, 491, 3.5, 'red'], [200, 500, 260, 540, 3, 'black'],
+    ];
+    const ink = readInk(board(900, 600, lines), pen);
+    assert.ok(ink.strokes.length >= lines.length, `획 ${ink.strokes.length}개`);
+    const u = ink.setup.unitsPerPt;
+    for (const stroke of ink.strokes) {
+      assert.equal(stroke.pen, pen);
+      assert.equal(stroke.widths.length, stroke.points.length);
+    }
+    const bytes = await buildGoodnotesExport({ ink, title: '합성', jpeg: buildSolidJpeg(900, 600, 230), idSeed: `synth-${pen}` });
+    const { pages, notes } = await readBack(bytes);
+    assert.equal(pages.length, 2);
+    const objects = pageObjects(notes[0]).filter(o => o.kind === KIND_STROKE);
+    assert.equal(objects.length, ink.strokes.length, '쓴 획이 모두 되읽힌다');
+    // 만년필은 본문 f3 1, 붓은 4.
+    for (const o of objects) assert.equal(strokeInfo(o).penType, pen === 'fountain' ? 1 : 4);
+    // 되읽은 중심선(2차 Bézier와 반폭)을 사진 픽셀로 되돌려 선마다 중심선의 점이 펜에 덮이는지 본다.
+    const { fit } = inkPageLayout(ink, ink.setup);
+    const min = GOODNOTES_EXPORT_MIN_PEN_PT * u / 2, max = GOODNOTES_EXPORT_MAX_PEN_PT * u / 2;
+    const back = objects.map(o => {
+      const vpen = variablePenOf(o);
+      assert.ok(vpen, '가변 굵기 펜으로 되읽힌다');
+      assert.equal(vpen.kind, pen);
+      const samples = [];
+      for (const sub of vpen.centerline) {
+        let p0 = sub.move;
+        samples.push(p0);
+        for (const { c, p } of sub.quads) {
+          for (let k = 1; k <= 4; k += 1) {
+            const t = k / 4, s = 1 - t;
+            samples.push([0, 1, 2].map(i => s * s * p0[i] + 2 * s * t * c[i] + t * t * p[i]));
+          }
+          p0 = p;
+        }
+      }
+      // 반폭은 하한과 상한(지름 0.35~6pt의 절반) 안이다(float32와 중심선 반올림 여유 0.05단위).
+      for (const [, , r] of samples) assert.ok(r >= min - 0.05 && r <= max + 0.05, `반폭 ${r / u}pt`);
+      return { pts: samples.map(([x, y, r]) => [(x - fit.offsetX) / fit.scale, (y - fit.offsetY) / fit.scale, r / fit.scale]), color: strokeInfo(o).color };
+    });
+    const covered = (x, y) => back.find(({ pts }) => pts.some((p, i) => {
+      const q = pts[Math.max(0, i - 1)];
+      const dx = p[0] - q[0], dy = p[1] - q[1], l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((x - q[0]) * dx + (y - q[1]) * dy) / l2)) : 0;
+      return Math.hypot(x - q[0] - t * dx, y - q[1] - t * dy) <= Math.max(p[2], q[2]) + 0.75;
+    }));
+    for (const [x0, y0, x1, y1, , color] of lines) {
+      let hit = 0;
+      const samples = 9;
+      for (let k = 0; k < samples; k += 1) {
+        const t = k / (samples - 1);
+        const stroke = covered(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+        if (!stroke) continue;
+        hit += 1;
+        INK_PDF_COLORS[color].forEach((c, i) => close(stroke.color[i], Math.fround(c), 1e-6));
+      }
+      assert.ok(hit >= samples - 1, `(${x0}, ${y0})→(${x1}, ${y1}) ${color}: ${hit}/${samples}`);
+    }
+    assert.equal(readInk(board(600, 400, []), pen).strokes.length, 0);
+  });
+}
+
+test('미리보기 채움 경로: 색마다 하나, 획마다 닫힌 하위 경로, 점 하나짜리 획도 남는다', () => {
+  const u = B.unitsPerPt;
+  const strokes = [
+    { pen: 'fountain', points: [[110, 110], [160, 112], [210, 140]], widths: [1, 4, 2], color: 'black' },
+    { pen: 'fountain', points: [[110, 210]], widths: [0.35 * u], color: 'black' },
+    { pen: 'brush', points: [[300, 300], [300.2, 300.1], [300, 300]], widths: [5, 5, 5], color: 'red' },
+    { pen: 'brush', points: [[400, 400], [450, 400], [400, 400.5]], widths: [3, 3, 3], color: 'blue' },
+  ];
+  const fills = inkPreviewFillPaths(strokes, { x: 100, y: 100 });
+  assert.deepEqual(fills.map(f => f.color), ['black', 'red', 'blue']);
+  const zs = fills.map(f => (f.d.match(/z/g) ?? []).length);
+  assert.deepEqual(zs, [2, 1, 1]);
+  for (const { d } of fills) {
+    assert.match(d, /^m/);
+    assert.match(d, /z$/);
+    assert.doesNotMatch(d, /NaN|Infinity|e[-+]?\d/, '숫자가 정상이다');
+    assert.ok(/a/.test(d) || /l/.test(d));
+  }
+  // 첫 m은 frame 기준 절대 좌표다(0.25단위 반올림).
+  const [x, y] = fills[0].d.slice(1).match(/-?[\d.]+/g).slice(0, 2).map(Number);
+  assert.ok(x >= 9 && x <= 11 && y >= 8 && y <= 12, `${x} ${y}`);
+  assert.deepEqual(inkPreviewFillPaths([], { x: 0, y: 0 }), []);
 });
