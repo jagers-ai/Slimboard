@@ -9,7 +9,8 @@ import {
   GOODNOTES_EXPORT_TYPE,
   buildGoodnotesExport,
   goodnotesFileName,
-  inkPreviewPen,
+  inkPreviewColor,
+  inkPreviewFrame,
 } from "./goodnotes-export-format";
 
 // The file format, its profile and page units are decided only in ./goodnotes-export-format.ts.
@@ -20,8 +21,9 @@ const format = {
   async write(ink: Ink, title: string, photo: Blob): Promise<Uint8Array> {
     return buildGoodnotesExport({ ink, title, jpeg: new Uint8Array(await photo.arrayBuffer()), idSeed: newSeed() });
   },
-  /** Pen color and width as the file shows them, for the preview. */
-  pen: inkPreviewPen,
+  /** Where the photo sits on page 1 and the pen colors, for the preview. */
+  frame: inkPreviewFrame,
+  color: inkPreviewColor,
 };
 
 // randomUUID exists only in secure contexts; without it the module seeds from the input.
@@ -29,7 +31,7 @@ function newSeed() {
   try { return globalThis.crypto?.randomUUID?.(); } catch { return undefined; }
 }
 
-/** One path per color and pen width, in the coordinates of `width` x `height`. */
+/** One path per color and pen width, in the coordinates of `width` x `height` (the photo's area on page 1). */
 export type GoodnotesPreview = { width: number; height: number; paths: Array<{ d: string; color: string; width: number }> };
 /** The screen shares or saves `file` and draws `preview` without knowing the format. */
 export type GoodnotesFile = { file: File; preview: GoodnotesPreview };
@@ -64,23 +66,46 @@ export async function prepareGoodnotesFile({ photoUrl, title, signal }: {
   }
 }
 
+// The preview draws the very strokes of the file: same points, colors and widths.
 function previewInk(ink: Ink): GoodnotesPreview {
-  const paths = new Map<string, GoodnotesPreview["paths"][number]>();
+  const frame = format.frame(ink);
+  const paths = new Map<string, { color: string; width: number; parts: string[] }>();
   for (const stroke of ink.strokes) {
     if (!stroke.points.length) continue;
-    const pen = format.pen(ink, stroke);
-    const width = Math.round(pen.width * 2) / 2;
-    const key = `${pen.color} ${width}`;
+    const color = format.color(stroke.color);
+    const width = Math.round(stroke.width * 4) / 4;
+    const key = `${color} ${width}`;
     let path = paths.get(key);
-    if (!path) paths.set(key, path = { d: "", color: pen.color, width });
-    path.d += stroke.points.map(([x, y], index) => `${index ? "L" : "M"}${round(x)} ${round(y)}`).join("");
-    // A zero-length line still paints its round caps, so a single point shows as a dot.
-    if (stroke.points.length === 1) path.d += "h0";
+    if (!path) paths.set(key, path = { color, width, parts: [] });
+    path.parts.push(strokePath(stroke.points, frame));
   }
-  return { width: ink.width, height: ink.height, paths: [...paths.values()] };
+  return {
+    width: frame.width,
+    height: frame.height,
+    paths: [...paths.values()].map(({ color, width, parts }) => ({ d: parts.join(""), color, width })),
+  };
 }
 
-function round(value: number) { return Math.round(value * 10) / 10; }
+// About 50,000 points per photo: half-unit steps (about 0.2 px on screen) in relative moves keep the path short.
+function strokePath(points: Ink["strokes"][number]["points"], frame: { x: number; y: number }) {
+  let lastX = snap(points[0][0] - frame.x);
+  let lastY = snap(points[0][1] - frame.y);
+  let d = `M${lastX} ${lastY}l`;
+  let moved = false;
+  for (let index = 1; index < points.length; index += 1) {
+    const x = snap(points[index][0] - frame.x);
+    const y = snap(points[index][1] - frame.y);
+    if (x === lastX && y === lastY) continue;
+    d += `${moved ? " " : ""}${x - lastX} ${y - lastY}`;
+    lastX = x;
+    lastY = y;
+    moved = true;
+  }
+  // A zero-length line still paints its round caps, so a single point shows as a dot.
+  return moved ? d : `${d}0 0`;
+}
+
+function snap(value: number) { return Math.round(value * 2) / 2; }
 
 async function loadPhoto(url: string, signal: AbortSignal) {
   let response: Response;
