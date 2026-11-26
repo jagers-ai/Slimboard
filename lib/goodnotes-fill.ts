@@ -9,8 +9,11 @@
 // 1. 고리를 격자에 칠하고 안쪽 거리장 D(경계까지 거리)를 만든다. 바깥 등고선 둘레는 고리 선분까지의 정확한 거리로 고친다.
 // 2. 펜 굵기 = 능선(골격) 반지름 90분위 × 2 × penWidthRatio. 하한과 상한으로 자르고, 실제로 그려질 굵기로 계획한다.
 // 3. D의 등고선을 펜 반지름 r, r + 간격, r + 2 간격 … 에서 딴다. 간격은 펜 굵기 × ringStep(1보다 작아 고리끼리 겹친다).
-// 4. 등고선 펜이 덮지 못한 잉크(능선 틈, 펜보다 가는 부분)를 세선화해 골격 경로로 더한다. 모서리 끝 같은 작은 틈은 버린다.
-// 5. 항목(등고선 고리, 골격 경로)을 최소 신장 트리로 잇고(다리 길이 + 잉크 밖 벌점) 되짚으며 한붓 경로를 만든다.
+// 4. 등고선 펜이 덮지 못한 잉크(능선 틈, 펜보다 가는 부분, 등고선 끝 사이의 가는 목)를 찾고, 덩어리 전체의 중심축
+//    (Guo-Hall 세선화, 가지 끝 다듬기) 가운데 그 잉크에 펜이 닿는 부분을 골격 경로로 더한다.
+//    중심축이 지나지 않는 모서리 끝의 작은 틈은 버린다(채우면 펜이 잉크 밖으로 나간다).
+// 5. 항목(등고선 고리, 골격 경로)을 최소 신장 트리로 잇고(다리 길이 + 잉크 밖 벌점, 배경을 건너면 큰 벌점)
+//    되짚으며 한붓 경로를 만든다.
 // 6. 경로를 펜 굵기 기준 오차로 단순화하고 페이지 단위로 바꾼다.
 //
 // 브라우저, Web Worker, Node 24(type stripping)에서 돈다. enum, namespace, Buffer, 외부 패키지를 쓰지 않는다.
@@ -74,17 +77,25 @@ export type FilledStroke<C extends string = FillColor> = {
  */
 export const GOODNOTES_PEN_DRAWN_PER_STORED = 1;
 
+/**
+ * 기본값(2026-11-26 측정, 실제 판서 윤곽 1062덩어리, Mac Node). 격자 8칸/굵기, 오차 0.05는 6칸/0.07보다
+ * 되읽은 모양 IoU가 0.853 → 0.872로 좋아지고, 시간은 약 0.6초 → 0.9초, 파일은 0.49MB → 0.50MB다.
+ * 펜 비율 0.7은 IoU가 더 높지만 획이 만나는 곳에 흰 틈(없던 구멍)이 생겨 0.8로 둔다.
+ */
 export const FILL_DEFAULTS = {
   penWidthRatio: 0.8,
   ringStep: 0.85,
-  tolerance: 0.07,
-  cellsPerWidth: 6,
+  tolerance: 0.05,
+  cellsPerWidth: 8,
   maxCellsPerShape: 250_000,
   maxPointsPerStroke: 2000,
   coordinateStep: 1 / 32,
 } as const;
 
 type Pt = [number, number];
+
+/** 골격 경로를 이웃 칸 평균으로 다듬는 횟수. */
+const SKELETON_SMOOTHING = 3;
 type Item = { pts: Pt[]; comp: number };
 
 /** 덩어리들을 볼펜 획으로 채운다. 점이 하나라도 있는 덩어리는 적어도 획 하나를 낸다. */
@@ -254,23 +265,25 @@ function fillRings(rings: Pt[][], strokeWidth: number | undefined, o: Resolved):
   }
 
   // 등고선 펜이 덮지 못한 잉크 → 골격 경로
-  const seeds = new Uint8Array(N);
-  for (const it of items) markPath(seeds, it.pts, g.W, g.H);
   // 첫 등고선 안쪽 칸: 가장 가까운 등고선까지 거리 = D - (그 칸 아래 가장 높은 등고선값). 거리장이라 정확하다.
-  // 첫 등고선 바깥 칸(경계 띠, 펜보다 가는 부분): 경로 칸까지의 격자 거리(칸 크기만큼 오차를 둔다).
-  const coverSq = items.length ? edtSq(seeds, g.W, g.H) : null;
-  const slackIn = 0.04 * d, reachOut = r + 0.6;
-  const U = new Uint8Array(N);
+  // 첫 등고선 바깥 칸(경계 띠, 펜보다 가는 부분): 경로 선분까지의 실제 거리. 칸 단위 거리로 어림하면
+  // 두 등고선 끝 사이의 가는 목이 덮인 것으로 잘못 보여 고리가 끊긴다.
+  const slackIn = 0.04 * d, reachOut = r + 0.3;
+  const U = new Uint8Array(N), band: number[] = [];
   for (let p = 0; p < N; p += 1) {
     if (!mask[p]) continue;
-    if (!coverSq) { U[p] = 1; continue; }
+    if (!items.length) { U[p] = 1; continue; }
     const v = D[p];
-    const gap = v >= r ? v - (r + Math.floor((v - r) / step) * step) : Infinity;
-    if (gap <= r + slackIn) continue;
-    if (v < r && coverSq[p] <= reachOut * reachOut) continue;
-    U[p] = 1;
+    if (v >= r) {
+      const gap = v - (r + Math.floor((v - r) / step) * step);
+      if (gap > r + slackIn) U[p] = 1;
+    } else band.push(p);
   }
-  for (const piece of skeletonItems(U, D, g, r, d, items.length > 0)) items.push(piece);
+  if (band.length) {
+    const dist = pathDistance(items, g.W, band, reachOut);
+    band.forEach((p, k) => { if (dist[k] > reachOut) U[p] = 1; });
+  }
+  for (const piece of skeletonItems(mask, U, D, g, r)) items.push(piece);
 
   // 잉크 조각마다 따로 잇는다
   const comp = labels(mask, g.W, g.H, D);
@@ -472,20 +485,44 @@ function contourLoops(D: Float32Array, W: number, H: number, level: number): Pt[
   return loops;
 }
 
-/** 경로 점이 지나는 칸을 표시한다(반 칸 간격으로). */
-function markPath(seeds: Uint8Array, pts: Pt[], W: number, H: number) {
-  const mark = (x: number, y: number) => {
-    const i = Math.floor(x), j = Math.floor(y);
-    if (i >= 0 && j >= 0 && i < W && j < H) seeds[j * W + i] = 1;
-  };
-  mark(pts[0][0], pts[0][1]);
-  for (let k = 0; k < pts.length; k += 1) {
-    const a = pts[k], b = pts[(k + 1) % pts.length], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5);
-    for (let t = 1; t <= n; t += 1) mark(a[0] + ((b[0] - a[0]) * t) / n, a[1] + ((b[1] - a[1]) * t) / n);
+/** 칸 중심에서 항목 경로(닫힌 차례열)까지의 거리. limit보다 먼 값은 limit보다 큰 값으로만 보장한다. */
+function pathDistance(items: Item[], W: number, cells: number[], limit: number): Float64Array {
+  const S = Math.max(4, Math.ceil(limit)), NX = Math.ceil(W / S) + 1, buckets = new Map<number, number[]>();
+  const ax: number[] = [], ay: number[] = [], bx: number[] = [], by: number[] = [];
+  for (const it of items) {
+    const P = it.pts, n = P.length;
+    for (let k = 0; k < n; k += 1) {
+      const a = P[k], b = P[(k + 1) % n], id = ax.length;
+      ax.push(a[0]); ay.push(a[1]); bx.push(b[0]); by.push(b[1]);
+      const x0 = Math.floor((Math.min(a[0], b[0]) - limit) / S), x1 = Math.floor((Math.max(a[0], b[0]) + limit) / S);
+      const y0 = Math.floor((Math.min(a[1], b[1]) - limit) / S), y1 = Math.floor((Math.max(a[1], b[1]) + limit) / S);
+      for (let y = y0; y <= y1; y += 1) for (let x = x0; x <= x1; x += 1) {
+        const key = y * NX + x;
+        let list = buckets.get(key);
+        if (!list) buckets.set(key, list = []);
+        list.push(id);
+      }
+    }
   }
+  const out = new Float64Array(cells.length);
+  cells.forEach((p, i) => {
+    const px = (p % W) + 0.5, py = Math.floor(p / W) + 0.5;
+    let best = Infinity;
+    for (const k of buckets.get(Math.floor(py / S) * NX + Math.floor(px / S)) ?? []) {
+      const dx = bx[k] - ax[k], dy = by[k] - ay[k], l2 = dx * dx + dy * dy;
+      const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax[k]) * dx + (py - ay[k]) * dy) / l2)) : 0;
+      const ex = px - ax[k] - t * dx, ey = py - ay[k] - t * dy, v = ex * ex + ey * ey;
+      if (v < best) best = v;
+    }
+    out[i] = Math.sqrt(best);
+  });
+  return out;
 }
 
-/** 8방향 연결 덩어리 번호(1부터)와 덩어리마다 가장 깊은 칸. */
+/**
+ * 덩어리 번호(1부터)와 덩어리마다 가장 깊은 칸. 한 칸 틈까지는 같은 덩어리로 본다: 칸보다 가는 목(고리의 가는 곳)이
+ * 칠해지지 않아 끊기면 조각마다 따로 획이 나가고 그 틈이 비어 고리의 구멍이 바깥과 이어진다.
+ */
 function labels(mask: Uint8Array, W: number, H: number, D: Float32Array) {
   const label = new Int32Array(W * H), stack = new Int32Array(W * H), peakAt: number[] = [-1];
   let count = 0;
@@ -497,7 +534,7 @@ function labels(mask: Uint8Array, W: number, H: number, D: Float32Array) {
     while (top) {
       const p = stack[--top], x = p % W, y = (p - x) / W;
       if (D[p] > D[best]) best = p;
-      for (let j = -1; j <= 1; j += 1) for (let i = -1; i <= 1; i += 1) {
+      for (let j = -2; j <= 2; j += 1) for (let i = -2; i <= 2; i += 1) {
         const X = x + i, Y = y + j;
         if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
         const q = Y * W + X;
@@ -523,75 +560,94 @@ function compAt(label: Int32Array, p: Pt, W: number): number {
 // ---------------------------------------------------------------------------
 // 덮이지 않은 잉크의 골격
 
-/** Zhang-Suen 세선화 후 끝을 다듬고, 덩어리마다 되짚는 한붓 경로(닫힌 항목)를 만든다. */
-function skeletonItems(U: Uint8Array, D: Float32Array, g: Grid, r: number, d: number, filter: boolean): Item[] {
-  const { W, H } = g, N = W * H, lab = new Int32Array(N), stack = new Int32Array(N), items: Item[] = [];
-  const comps: number[][] = [];
+/** 8방향 연결 덩어리(칸 번호 목록). */
+function components8(m: Uint8Array, W: number, H: number): number[][] {
+  const N = W * H, lab = new Uint8Array(N), stack = new Int32Array(N), out: number[][] = [];
+  const N8 = [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1];
   for (let s = 0; s < N; s += 1) {
-    if (!U[s] || lab[s]) continue;
-    const id = comps.length + 1, list: number[] = [];
+    if (!m[s] || lab[s]) continue;
+    const list: number[] = [];
     let top = 0;
-    stack[top++] = s; lab[s] = id;
+    stack[top++] = s; lab[s] = 1;
     while (top) {
       const p = stack[--top];
       list.push(p);
-      for (const o of [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1]) {
+      for (const o of N8) {
         const q = p + o;
-        if (U[q] && !lab[q]) { lab[q] = id; stack[top++] = q; }
+        if (q >= 0 && q < N && m[q] && !lab[q]) { lab[q] = 1; stack[top++] = q; }
       }
     }
-    comps.push(list);
+    out.push(list);
   }
-  const keep = new Uint8Array(N);
-  const kept: number[][] = [];
-  for (const list of comps) {
-    // 모서리 끝(둥근 펜이 닿지 못하는 뾰족한 곳)과 아주 작은 틈은 버린다. 그리면 펜이 잉크 밖으로 나가고
-    // 모서리 양쪽에 작은 빈 주머니가 갇힌다. 펜보다 가는 긴 부분은 남긴다.
-    if (filter) {
-      if (list.length < 0.12 * d * d) continue;
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, top = 0;
-      for (const p of list) { const x = p % W, y = (p - x) / W; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); top = Math.max(top, D[p]); }
-      if (Math.max(x1 - x0, y1 - y0) + 1 <= 0.8 * d && top <= 0.5 * r) continue;
-    }
-    for (const p of list) keep[p] = 1;
-    kept.push(list);
-  }
-  if (!kept.length) return items;
-  thin(keep, kept.flat(), W);
+  return out;
+}
+
+/**
+ * 덮이지 않은 잉크(U)를 채울 골격 경로. 덩어리 전체의 중심축(세선화)을 만들고 가지 끝을 다듬은 뒤,
+ * 덮이지 않은 잉크에 펜이 닿는 중심축 칸만 골라 덩어리마다 되짚는 한붓 경로(닫힌 항목)로 만든다.
+ * U 자체를 세선화하면 등고선 끝의 초승달 모양 틈에서 획을 가로지르는 짧은 가지가 생겨 펜이 잉크 밖으로 나간다.
+ */
+function skeletonItems(mask: Uint8Array, U: Uint8Array, D: Float32Array, g: Grid, r: number): Item[] {
+  const { W, H } = g, N = W * H, items: Item[] = [];
+  let anyU = false;
+  for (let p = 0; p < N && !anyU; p += 1) anyU = U[p] === 1;
+  if (!anyU) return items;
+
+  // 덩어리 전체의 중심축
+  const sk = mask.slice();
+  const inkList: number[] = [];
+  for (let p = 0; p < N; p += 1) if (sk[p]) inkList.push(p);
+  thin(sk, inkList, W);
   const N8 = [-W, -W + 1, 1, W + 1, W, W - 1, -1, -W - 1];
   const ORDER = [-W, 1, W, -1, -W + 1, W + 1, W - 1, -W - 1];
-  const deg = (p: number) => { let n = 0; for (const o of N8) n += keep[p + o]; return n; };
-  for (const list of kept) {
-    let alive = list.filter(p => keep[p]);
-    if (alive.length === 0) {
-      const p = list.reduce((a, b) => (D[b] > D[a] ? b : a));
-      items.push({ pts: [[(p % W) + 0.5, Math.floor(p / W) + 0.5]], comp: 0 });
-      continue;
-    }
-    // 끝 다듬기: 펜이 잉크 밖으로 나가는 끝 칸이 안쪽 칸의 원에 들어가면 지운다.
-    let count = alive.length;
-    const queue = alive.filter(p => deg(p) <= 1);
-    while (queue.length && count > 1) {
-      const p = queue.pop() as number;
-      if (!keep[p] || D[p] >= r || deg(p) !== 1) continue;
-      let n = -1;
-      for (const o of N8) if (keep[p + o]) n = p + o;
-      const step = Math.abs(n - p) === 1 || Math.abs(n - p) === W ? 1 : Math.SQRT2;
-      if (step + D[p] <= D[n] + 0.35) { keep[p] = 0; count -= 1; queue.push(n); }
-    }
-    alive = alive.filter(p => keep[p]);
-    // 되짚는 깊이 우선 경로
-    const start = alive.find(p => deg(p) <= 1) ?? alive[0];
-    const seen = new Set<number>([start]), path: Pt[] = [], st: Array<[number, number]> = [[start, 0]];
-    const at = (p: number): Pt => [(p % W) + 0.5, Math.floor(p / W) + 0.5];
-    path.push(at(start));
+  const deg = (p: number) => { let n = 0; for (const o of N8) n += sk[p + o]; return n; };
+  // 끝 다듬기: 끝 칸의 원(반지름 D)이 이웃 칸의 원에 들어가면 지운다(모서리와 잔물결로 뻗은 가지).
+  const queue = inkList.filter(p => sk[p] && deg(p) <= 1);
+  while (queue.length) {
+    const p = queue.pop() as number;
+    if (!sk[p] || D[p] >= r || deg(p) !== 1) continue;
+    let n = -1;
+    for (const o of N8) if (sk[p + o]) n = p + o;
+    const step = Math.abs(n - p) === 1 || Math.abs(n - p) === W ? 1 : Math.SQRT2;
+    if (step + D[p] <= D[n] + 0.35) { sk[p] = 0; queue.push(n); }
+  }
+
+  // 덮이지 않은 잉크에 펜이 닿는 중심축 칸만 쓴다. 모서리 끝처럼 중심축에서 먼 작은 틈은 저절로 빠진다
+  // (그곳까지 펜을 보내면 잉크 밖으로 나간다). 작은 틈이라도 중심축 가까이 있으면 채운다: 가는 목 양옆의
+  // 작은 틈을 버리면 고리가 끊겨 구멍이 바깥과 이어진다.
+  // 덩어리 조각에 항목이 하나도 없으면 부르는 쪽이 가장 깊은 칸에 점을 찍는다.
+  const near = edtSq(U, W, H), reach = (r + 1) ** 2;
+  const use = new Uint8Array(N);
+  for (const p of inkList) if (sk[p] && near[p] <= reach) use[p] = 1;
+  // 칸 중심을 그대로 이으면 비스듬한 선이 계단을 따라 지그재그로 가서 펜 가장자리가 구슬 꿴 듯 울퉁불퉁해진다.
+  // 이웃 칸 평균으로 몇 번 다듬는다(끝 칸은 그대로 둔다).
+  const sx = new Float64Array(N), sy = new Float64Array(N);
+  const usedCells: number[] = [];
+  for (const p of inkList) if (use[p]) { usedCells.push(p); sx[p] = (p % W) + 0.5; sy[p] = Math.floor(p / W) + 0.5; }
+  for (let iter = 0; iter < SKELETON_SMOOTHING; iter += 1) {
+    const nx = new Float64Array(usedCells.length), ny = new Float64Array(usedCells.length);
+    usedCells.forEach((p, i) => {
+      let n = 0, ax = 0, ay = 0;
+      for (const o of N8) if (use[p + o]) { n += 1; ax += sx[p + o]; ay += sy[p + o]; }
+      nx[i] = n >= 2 ? 0.5 * sx[p] + (0.5 * ax) / n : sx[p];
+      ny[i] = n >= 2 ? 0.5 * sy[p] + (0.5 * ay) / n : sy[p];
+    });
+    usedCells.forEach((p, i) => { sx[p] = nx[i]; sy[p] = ny[i]; });
+  }
+  const at = (p: number): Pt => [sx[p], sy[p]];
+  for (const list of components8(use, W, H)) {
+    if (list.length === 1) { items.push({ pts: [at(list[0])], comp: 0 }); continue; }
+    // 되짚는 깊이 우선 경로(끝 칸에서 시작)
+    let start = list[0];
+    for (const p of list) { let n = 0; for (const o of N8) n += use[p + o]; if (n <= 1) { start = p; break; } }
+    const seen = new Set<number>([start]), path: Pt[] = [at(start)], st: Array<[number, number]> = [[start, 0]];
     while (st.length) {
       const top = st[st.length - 1];
       let moved = false;
       while (top[1] < 8) {
         const q = top[0] + ORDER[top[1]];
         top[1] += 1;
-        if (keep[q] && !seen.has(q)) { seen.add(q); st.push([q, 0]); path.push(at(q)); moved = true; break; }
+        if (use[q] && !seen.has(q)) { seen.add(q); st.push([q, 0]); path.push(at(q)); moved = true; break; }
       }
       if (!moved) { st.pop(); if (st.length) path.push(at(st[st.length - 1][0])); }
     }
@@ -601,6 +657,7 @@ function skeletonItems(U: Uint8Array, D: Float32Array, g: Grid, r: number, d: nu
   return items;
 }
 
+/** Guo-Hall 세선화. Zhang-Suen은 두 칸 굵기의 대각선을 통째로 지워 가늘게 삐친 끝이 사라진다. */
 function thin(m: Uint8Array, list: number[], W: number) {
   let cur = list.filter(p => m[p]);
   for (let changed = true; changed;) {
@@ -608,12 +665,14 @@ function thin(m: Uint8Array, list: number[], W: number) {
     for (let step = 0; step < 2; step += 1) {
       const del: number[] = [];
       for (const p of cur) {
-        const n0 = m[p - W], n1 = m[p - W + 1], n2 = m[p + 1], n3 = m[p + W + 1], n4 = m[p + W], n5 = m[p + W - 1], n6 = m[p - 1], n7 = m[p - W - 1];
-        const b = n0 + n1 + n2 + n3 + n4 + n5 + n6 + n7;
-        if (b < 2 || b > 6) continue;
-        const a = (!n0 && n1 ? 1 : 0) + (!n1 && n2 ? 1 : 0) + (!n2 && n3 ? 1 : 0) + (!n3 && n4 ? 1 : 0) + (!n4 && n5 ? 1 : 0) + (!n5 && n6 ? 1 : 0) + (!n6 && n7 ? 1 : 0) + (!n7 && n0 ? 1 : 0);
-        if (a !== 1) continue;
-        if (step === 0 ? n0 * n2 * n4 || n2 * n4 * n6 : n0 * n2 * n6 || n0 * n4 * n6) continue;
+        const p2 = m[p - W], p3 = m[p - W + 1], p4 = m[p + 1], p5 = m[p + W + 1], p6 = m[p + W], p7 = m[p + W - 1], p8 = m[p - 1], p9 = m[p - W - 1];
+        const c = (!p2 && (p3 || p4) ? 1 : 0) + (!p4 && (p5 || p6) ? 1 : 0) + (!p6 && (p7 || p8) ? 1 : 0) + (!p8 && (p9 || p2) ? 1 : 0);
+        if (c !== 1) continue;
+        const n1 = (p9 | p2) + (p3 | p4) + (p5 | p6) + (p7 | p8), n2 = (p2 | p3) + (p4 | p5) + (p6 | p7) + (p8 | p9);
+        const n = Math.min(n1, n2);
+        if (n < 2 || n > 3) continue;
+        const keepIt = step === 0 ? (p6 | p7 | (p9 ? 0 : 1)) & p8 : (p2 | p3 | (p5 ? 0 : 1)) & p4;
+        if (keepIt) continue;
         del.push(p);
       }
       for (const p of del) m[p] = 0;
@@ -631,12 +690,19 @@ function sampleD(D: Float32Array, g: Grid, x: number, y: number) {
   return (D[p] * (1 - fu) + D[p + 1] * fu) * (1 - fv) + (D[p + g.W] * (1 - fu) + D[p + g.W + 1] * fu) * fv;
 }
 
-/** 다리 비용: 길이 + 펜이 잉크 밖으로 나가는 양의 6배. */
+/**
+ * 다리 비용: 길이 + 펜이 잉크 밖으로 나가는 양의 6배 + 펜 중심이 잉크 밖(배경)을 지나는 길이의 100배.
+ * 배경을 건너는 다리는 열린 획 사이를 이어 없던 구멍을 만들므로 잉크 안으로 도는 길이 있으면 그쪽을 고른다.
+ */
 function bridgeCost(a: Pt, b: Pt, D: Float32Array, g: Grid, r: number, slack: number) {
   const l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / 0.5));
-  let pen = 0;
-  for (let k = 0; k <= n; k += 1) pen += Math.max(0, r - slack - sampleD(D, g, a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
-  return l + (6 * pen * l) / n;
+  let pen = 0, out = 0;
+  for (let k = 0; k <= n; k += 1) {
+    const v = sampleD(D, g, a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n);
+    pen += Math.max(0, r - slack - v);
+    if (v < 0) out += 1;
+  }
+  return l + ((6 * pen + 100 * out) * l) / n;
 }
 
 type Link = { i: number; j: number; ia: number; jb: number; cost: number };
