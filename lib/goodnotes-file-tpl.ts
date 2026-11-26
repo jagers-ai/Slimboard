@@ -440,3 +440,502 @@ export function polylineHausdorff(a: ReadonlyArray<Point>, b: ReadonlyArray<Poin
   for (const p of b) worst = Math.max(worst, distanceToPolyline(p, a));
   return worst;
 }
+
+// ---------------------------------------------------------------------------
+// 가변 굵기 펜: 만년필(본문 f3 = 1)과 붓(본문 f3 = 4)
+//
+// 출처(형식 사실만 참고, 코드는 옮기지 않고 새로 작성):
+// - Taylor-Nilsen/goodnotes-codec (MIT) 기본 브랜치 docs/FORMAT.md, goodnotes/model.py, 개선 브랜치(PR #11, feat/full-format)
+//   docs/FORMAT.md, goodnotes/schema.py, goodnotes/model.py, reports/full-20261020-111939/report.txt
+//   https://github.com/Taylor-Nilsen/goodnotes-codec/pull/11 , https://github.com/Taylor-Nilsen/goodnotes-codec/issues/7
+// - Kaih1825/parser-for-goodnotes (MIT) src/goodnotes_re/stroke.py, wiki 04 https://github.com/Kaih1825/parser-for-goodnotes
+// - goodparse (GPL, 사실만 참고) src/goodparse/ink.py, oenderg/gnreader docs/FORMAT.md, cable729/inkterop (MIT) reader.py
+//
+// 시그니처(codec schema.py STROKE_SCHEMA, goodparse ink.py 머리 주석, parser-for-goodnotes 모두 같음)
+//   만년필 VARIABLE_WIDTH  vA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)
+//   붓     DYNAMIC_WIDTH   vuA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)   (버전 뒤 u 하나가 더 있다)
+// 값 순서: [v 버전 2] [붓만: u 기본 반폭] A(v) 중심선 명령, A(u) move 실수들, A(u) quad 실수들,
+//   A(v) 윤곽 하위 경로별 명령 수, A(v) 윤곽 명령, A(u) 윤곽 move(2개씩), A(u) 윤곽 quad(4개씩, 관찰상 비어 있음),
+//   A(u) 윤곽 cubic(6개씩), A(u) 윤곽 arc(원호 5개 cx cy r a0 a1, 타원호 7개), A(v) 원호마다 시계 방향 표시.
+//
+// 중심선 명령 비트(goodparse ink.py, codec schema.py VW_COMMAND/DW_COMMAND가 같은 뜻으로 맞물린다)
+//   bit0: 0 move, 1 quad. bit1(붓만): 그 노드가 자기 반폭을 가진다(codec의 variableMoveTo 2, variableQuadCurveTo 3).
+//   bit2: 회전 값이 붙는다(move +1개, quad +3개, codec의 ...WithRotation, 마커 펜). 우리는 쓰지 않는다.
+//   만년필: move (x, y, r), quad (cx, cy, cr, x, y, r). r은 반폭(페이지 단위). codec, goodparse, gnreader 같음.
+//   붓 자기 반폭 노드: move (x, y, r). quad 값 순서는 자료가 다르다.
+//     goodparse(참조 PDF와 맞춰 본 중심선 렌더): (cx, cy, x, y, cr, r)  ← 기본값 "goodparse"
+//     codec 생성기와 디코더: (cx, cy, cr, x, y, r). codec은 윤곽으로만 그려서 이 순서가 그림으로 검증되지 않았다.
+//   붓 기본 반폭 u: goodparse는 "자기 반폭이 없는 노드가 쓰는 반폭, 모든 노드가 자기 반폭을 가지면 -1"로 기록했다.
+//     codec 생성기는 2 × max(반폭)을 쓴다. 기본값은 굿노트 자체 파일 관찰(goodparse)을 따라 -1이다.
+// 윤곽 명령(만년필 / 붓): move 0/2, quad 1/3, cubic 2/4, arc 3/5, 타원호 6/8. 붓은 만년필 코드 + 2.
+//   (codec schema.py, parser-for-goodnotes stroke.py extract_native_cgpath_segments_from_tpl)
+//
+// 굿노트가 죽던 원인과 개선 브랜치 규칙(codec 기본 브랜치 model.py new_fountain_stroke 주석 "KNOWN BROKEN",
+// 개선 브랜치 docs/FORMAT.md, model.py _variable_width_blob)
+//   기본 브랜치는 획 전체 윤곽을 하위 경로 하나로 써서 명령 수 배열이 [전체 명령 수] 하나였다. 굿노트의 역직렬화기는
+//   중심선 quad 구간마다 윤곽 하위 경로 하나(quadCurveTo가 자기 구간 윤곽을 가진다)를 기대하고 명령 수를 검사하므로
+//   개수가 다르면 가져오기에서 죽는다. 실제 문서의 가변 굵기 획 4,363개 모두 quad 구간 수 = 윤곽 하위 경로 수였다.
+//   개선 브랜치는 구간마다 닫힌 캡슐을 쓰고, 끝 원호를 모두 시계 방향 표시 1(각도 감소)로 쓴다. 이 파일을
+//   Mac용 굿노트로 가져와 죽지 않고 만년필, 붓 획이 그려졌다(report.txt "A 03 fountain/brush/tape pass").
+//   여기서는 그 규칙을 따르고, 쓰기 전에 윤곽 수 = quad 수를 검사한다.
+// 캡슐 안 명령 순서: 굿노트 자체 파일은 move, 옆선 cubic(1~3개), 끝 원호, 반대 옆선 cubic, 시작 원호다
+//   (gnreader 관찰 [0,2,3,2,3,...], codec 이슈 #7 실제 획 [0,2,2,2,3,2,2,2,3]). codec 개선 브랜치 생성기는
+//   move, 원호, cubic, 원호, cubic 순서로 썼고 그것도 열렸다. 여기서는 굿노트 자체 순서를 따른다.
+// 칠하기: 하위 경로들이 겹치며 전체 획이 된다(codec: "overlapping stadiums fill to the full stroke"). 모든 캡슐을 같은
+//   회전 방향으로 써서 nonzero 규칙에서 겹친 곳이 비지 않게 한다.
+
+export const FOUNTAIN_PEN_SIGNATURE = "vA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)";
+export const BRUSH_PEN_SIGNATURE = "vuA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)";
+
+export type VariablePenKind = "fountain" | "brush";
+/** 붓 자기 반폭 quad의 값 순서. 위 주석 참고. */
+export type BrushQuadOrder = "goodparse" | "codec";
+
+/** (x, y, r): 페이지 단위 좌표와 반폭 */
+export type RadiusPoint = readonly [number, number, number];
+export type VariableQuad = { c: RadiusPoint; p: RadiusPoint };
+/** 중심선 하위 경로: move 노드와 2차 Bézier 구간(제어점과 끝점에 각각 반폭). */
+export type VariableSubpath = { move: RadiusPoint; quads: VariableQuad[] };
+
+export type OutlineCommand =
+  | { op: "M"; x: number; y: number }
+  | { op: "Q"; cx: number; cy: number; x: number; y: number }
+  | { op: "C"; c1x: number; c1y: number; c2x: number; c2y: number; x: number; y: number }
+  /** CGPathAddArc와 같은 원호. clockwise면 a0에서 a1로 각도가 줄어든다. */
+  | { op: "A"; cx: number; cy: number; r: number; a0: number; a1: number; clockwise: boolean }
+  | { op: "E"; cx: number; cy: number; rx: number; ry: number; a0: number; a1: number; rotation: number; clockwise: boolean };
+
+export type VariablePen = {
+  kind: VariablePenKind;
+  /** 관찰값 2 */
+  version: number;
+  /** 붓의 기본 반폭(만년필은 null) */
+  defaultRadius: number | null;
+  centerline: VariableSubpath[];
+  /** 중심선 quad 구간마다 닫힌 윤곽 하나(순서 같음) */
+  outlines: OutlineCommand[][];
+};
+
+export const VARIABLE_PEN_DEFAULTS = { version: 2, brushDefaultRadius: -1 } as const;
+
+const OUTLINE_BASE = { M: 0, Q: 1, C: 2, A: 3, E: 6 } as const;
+
+function quadCount(centerline: ReadonlyArray<VariableSubpath>): number {
+  return centerline.reduce((n, sp) => n + sp.quads.length, 0);
+}
+
+export function encodeVariablePenTpl(pen: {
+  kind: VariablePenKind;
+  centerline: ReadonlyArray<VariableSubpath>;
+  outlines: ReadonlyArray<ReadonlyArray<OutlineCommand>>;
+  version?: number;
+  defaultRadius?: number;
+  brushQuadOrder?: BrushQuadOrder;
+}): Uint8Array {
+  const brush = pen.kind === "brush";
+  if (pen.centerline.length === 0) throw new Error("TPL_VARIABLE_EMPTY");
+  if (pen.outlines.length !== quadCount(pen.centerline)) {
+    // 굿노트가 가져오기에서 죽는 조건(codec 기본 브랜치). 쓰기 전에 막는다.
+    throw new Error(`TPL_OUTLINE_COUNT_MISMATCH quads ${quadCount(pen.centerline)} outlines ${pen.outlines.length}`);
+  }
+  const order = pen.brushQuadOrder ?? "goodparse";
+  const kinds: number[] = [];
+  const moves: number[] = [];
+  const quads: number[] = [];
+  const bits = (v: number) => float32ToBits(v);
+  for (const sp of pen.centerline) {
+    kinds.push(brush ? 2 : 0);
+    moves.push(...sp.move.map(bits));
+    for (const { c, p } of sp.quads) {
+      kinds.push(brush ? 3 : 1);
+      if (brush && order === "goodparse") quads.push(bits(c[0]), bits(c[1]), bits(p[0]), bits(p[1]), bits(c[2]), bits(p[2]));
+      else quads.push(bits(c[0]), bits(c[1]), bits(c[2]), bits(p[0]), bits(p[1]), bits(p[2]));
+    }
+  }
+  const shift = brush ? 2 : 0;
+  const counts: number[] = [];
+  const types: number[] = [];
+  const oMoves: number[] = [];
+  const oQuads: number[] = [];
+  const cubics: number[] = [];
+  const arcs: number[] = [];
+  const clockwise: number[] = [];
+  for (const sub of pen.outlines) {
+    if (sub.length === 0 || sub[0].op !== "M") throw new Error("TPL_OUTLINE_MUST_START_WITH_MOVE");
+    counts.push(sub.length);
+    for (const cmd of sub) {
+      types.push(OUTLINE_BASE[cmd.op] + shift);
+      switch (cmd.op) {
+        case "M":
+          oMoves.push(bits(cmd.x), bits(cmd.y));
+          break;
+        case "Q":
+          oQuads.push(bits(cmd.cx), bits(cmd.cy), bits(cmd.x), bits(cmd.y));
+          break;
+        case "C":
+          cubics.push(bits(cmd.c1x), bits(cmd.c1y), bits(cmd.c2x), bits(cmd.c2y), bits(cmd.x), bits(cmd.y));
+          break;
+        case "A":
+          arcs.push(bits(cmd.cx), bits(cmd.cy), bits(cmd.r), bits(cmd.a0), bits(cmd.a1));
+          clockwise.push(cmd.clockwise ? 1 : 0);
+          break;
+        default:
+          arcs.push(bits(cmd.cx), bits(cmd.cy), bits(cmd.rx), bits(cmd.ry), bits(cmd.a0), bits(cmd.a1), bits(cmd.rotation));
+          clockwise.push(cmd.clockwise ? 1 : 0);
+      }
+    }
+  }
+  const values: TplValue[] = [pen.version ?? VARIABLE_PEN_DEFAULTS.version, kinds, moves, quads, counts, types, oMoves, oQuads, cubics, arcs, clockwise];
+  if (brush) values.splice(1, 0, bits(pen.defaultRadius ?? VARIABLE_PEN_DEFAULTS.brushDefaultRadius));
+  return encodeTpl({ signature: brush ? BRUSH_PEN_SIGNATURE : FOUNTAIN_PEN_SIGNATURE, values, floatSize: 4 });
+}
+
+export function isVariablePenSignature(signature: string | null | undefined): boolean {
+  return signature === FOUNTAIN_PEN_SIGNATURE || signature === BRUSH_PEN_SIGNATURE;
+}
+
+/** 만년필, 붓 경로를 읽는다. 명령 비트 규칙은 위 주석 참고(회전 값이 붙은 노드는 회전 값을 건너뛴다). */
+export function decodeVariablePen(image: TplImage, options: { brushQuadOrder?: BrushQuadOrder } = {}): VariablePen {
+  const brush = image.signature === BRUSH_PEN_SIGNATURE;
+  if (!brush && image.signature !== FOUNTAIN_PEN_SIGNATURE) throw new Error(`TPL_NOT_VARIABLE_PEN ${image.signature}`);
+  const v = image.values as Array<number | number[]>;
+  const off = brush ? 2 : 1;
+  const version = v[0] as number;
+  const defaultRadius = brush ? bitsToFloat32(v[1] as number) : null;
+  const [kinds, movesRaw, quadsRaw, counts, types, oMovesRaw, oQuadsRaw, cubicsRaw, arcsRaw, flags] = v.slice(off) as number[][];
+  const f = (a: number[]) => a.map(bitsToFloat32);
+  const moves = f(movesRaw);
+  const quads = f(quadsRaw);
+  const order = options.brushQuadOrder ?? "goodparse";
+  const centerline: VariableSubpath[] = [];
+  let mi = 0;
+  let qi = 0;
+  for (const k of kinds) {
+    if (k > 7) throw new Error(`TPL_UNKNOWN_NODE ${k}`);
+    const own = !brush || (k & 2) !== 0;
+    const extra = (k & 4) !== 0;
+    if (!brush && (k === 2 || k === 3 || k === 6)) throw new Error(`TPL_UNSUPPORTED_CENTERLINE_NODE ${k}`);
+    if ((k & 1) === 0) {
+      const n = own ? 3 : 2;
+      if (mi + n > moves.length) throw new Error("TPL_MOVE_MISSING");
+      const r = own ? moves[mi + 2] : (defaultRadius as number);
+      centerline.push({ move: [moves[mi], moves[mi + 1], r], quads: [] });
+      mi += n + (extra ? 1 : 0);
+    } else {
+      const n = own ? 6 : 4;
+      if (qi + n > quads.length || centerline.length === 0) throw new Error("TPL_QUAD_WITHOUT_MOVE");
+      const q = quads.slice(qi, qi + n);
+      let c: RadiusPoint;
+      let p: RadiusPoint;
+      if (!own) {
+        c = [q[0], q[1], defaultRadius as number];
+        p = [q[2], q[3], defaultRadius as number];
+      } else if (brush && order === "goodparse") {
+        c = [q[0], q[1], q[4]];
+        p = [q[2], q[3], q[5]];
+      } else {
+        c = [q[0], q[1], q[2]];
+        p = [q[3], q[4], q[5]];
+      }
+      centerline[centerline.length - 1].quads.push({ c, p });
+      qi += n + (extra ? 3 : 0);
+    }
+  }
+  if (mi !== moves.length || qi !== quads.length) throw new Error(`TPL_NODE_COUNT_MISMATCH ${mi}/${moves.length} ${qi}/${quads.length}`);
+
+  const pools = { M: f(oMovesRaw), Q: f(oQuadsRaw), C: f(cubicsRaw), A: f(arcsRaw) };
+  const pos = { M: 0, Q: 0, C: 0, A: 0 };
+  const take = (key: keyof typeof pos, n: number) => {
+    const out = pools[key].slice(pos[key], pos[key] + n);
+    if (out.length !== n) throw new Error(`TPL_OUTLINE_POOL_SHORT ${key}`);
+    pos[key] += n;
+    return out;
+  };
+  let ti = 0;
+  let fi = 0;
+  const shift = brush ? 2 : 0;
+  const outlines: OutlineCommand[][] = [];
+  for (const count of counts) {
+    const sub: OutlineCommand[] = [];
+    for (let k = 0; k < count; k += 1) {
+      if (ti >= types.length) throw new Error("TPL_OUTLINE_TYPES_SHORT");
+      const code = types[ti++] - shift;
+      if (code === 0 || code === 4) {
+        const m = take("M", code === 0 ? 2 : 3);
+        sub.push({ op: "M", x: m[0], y: m[1] });
+      } else if (code === 1 || code === 5) {
+        const q = take("Q", code === 1 ? 4 : 5);
+        sub.push({ op: "Q", cx: q[0], cy: q[1], x: q[2], y: q[3] });
+      } else if (code === 2) {
+        const c = take("C", 6);
+        sub.push({ op: "C", c1x: c[0], c1y: c[1], c2x: c[2], c2y: c[3], x: c[4], y: c[5] });
+      } else if (code === 3) {
+        const a = take("A", 5);
+        sub.push({ op: "A", cx: a[0], cy: a[1], r: a[2], a0: a[3], a1: a[4], clockwise: (flags[fi++] ?? 1) !== 0 });
+      } else if (code === 6) {
+        const e = take("A", 7);
+        sub.push({ op: "E", cx: e[0], cy: e[1], rx: e[2], ry: e[3], a0: e[4], a1: e[5], rotation: e[6], clockwise: (flags[fi++] ?? 1) !== 0 });
+      } else {
+        throw new Error(`TPL_UNKNOWN_OUTLINE_COMMAND ${code + shift}`);
+      }
+    }
+    outlines.push(sub);
+  }
+  if (ti !== types.length) throw new Error("TPL_OUTLINE_TYPES_LEFT");
+  for (const key of ["M", "Q", "C", "A"] as const) if (pos[key] !== pools[key].length) throw new Error(`TPL_OUTLINE_POOL_LEFT ${key}`);
+  return { kind: brush ? "brush" : "fountain", version, defaultRadius, centerline, outlines };
+}
+
+// ---------------------------------------------------------------------------
+// 가변 굵기 중심선과 캡슐 윤곽 만들기
+
+export type VariableGeometryOptions = {
+  /** 윤곽 옆선 cubic의 허용 오차(페이지 단위). 기본 0.1 */
+  tolerance?: number;
+  /** 한 quad 구간이 꺾이는 최대 각도(라디안). 넘으면 같은 곡선을 둘로 나눈다. 기본 30° */
+  maxTurn?: number;
+  /** 반폭 하한(codec 개선 브랜치와 같은 0.05) */
+  minRadius?: number;
+  /** 점 하나짜리 획에 더하는 짧은 거리(codec과 같은 0.01) */
+  dotLength?: number;
+  /** 주면 polylineToMidpointQuadPath처럼 꼭짓점 근처 제어점을 더해 모서리 오차를 이 값 아래로 둔다. 기본 끔. */
+  cornerTolerance?: number;
+};
+
+const lerp3 = (a: RadiusPoint, b: RadiusPoint, t: number): RadiusPoint => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+/**
+ * 점과 반폭으로 중심선을 만든다. 굿노트 손글씨처럼 "중점 2차 Bézier"다: 입력 점이 제어점이고, 끝점은 연속한 제어점의
+ * 중점이며(goodparse 관찰), 첫 점과 끝 점은 곡선 위에 있다. 반폭도 같은 방식으로 2차 Bézier를 따른다.
+ * 많이 꺾이는 구간은 de Casteljau로 나눈다(곡선 모양은 그대로). 점이 하나뿐이면 dotLength만큼 떨어진 점을 더한다.
+ */
+export function variableCenterline(points: ReadonlyArray<Point>, radii: ReadonlyArray<number>, options: VariableGeometryOptions = {}): VariableSubpath {
+  if (points.length === 0) throw new Error("PATH_EMPTY_POLYLINE");
+  if (points.length !== radii.length) throw new Error("PATH_RADII_LENGTH");
+  const minRadius = options.minRadius ?? 0.05;
+  const pts: RadiusPoint[] = [];
+  points.forEach(([x, y], k) => {
+    const r = Math.max(minRadius, radii[k]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) throw new Error("PATH_BAD_POINT");
+    const prev = pts[pts.length - 1];
+    if (prev && prev[0] === x && prev[1] === y) pts[pts.length - 1] = [x, y, Math.max(prev[2], r)];
+    else pts.push([x, y, r]);
+  });
+  if (pts.length === 1) {
+    const [x, y, r] = pts[0];
+    const end: RadiusPoint = [x + (options.dotLength ?? 0.01), y, r];
+    return { move: pts[0], quads: [{ c: lerp3(pts[0], end, 0.5), p: end }] };
+  }
+  let controls = pts;
+  if (options.cornerTolerance !== undefined) {
+    if (!(options.cornerTolerance > 0)) throw new Error("PATH_BAD_TOLERANCE");
+    const delta = 4 * options.cornerTolerance;
+    controls = [pts[0]];
+    for (let k = 1; k < pts.length; k += 1) {
+      const a = pts[k - 1];
+      const b = pts[k];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const d = Math.min(delta, len / 2) / len;
+      const p1 = lerp3(a, b, d);
+      const p2 = lerp3(a, b, 1 - d);
+      controls.push(p1);
+      if (p2[0] !== p1[0] || p2[1] !== p1[1]) controls.push(p2);
+      controls.push(b);
+    }
+  }
+  const raw: VariableQuad[] = [];
+  for (let k = 0; k < controls.length; k += 1) {
+    const c = controls[k];
+    const next = controls[k + 1] ?? c;
+    raw.push({ c, p: lerp3(c, next, 0.5) });
+  }
+  const maxTurn = options.maxTurn ?? Math.PI / 6;
+  const quads: VariableQuad[] = [];
+  let start = controls[0];
+  const split = (p0: RadiusPoint, q: VariableQuad, depth: number) => {
+    const a = [q.c[0] - p0[0], q.c[1] - p0[1]];
+    const b = [q.p[0] - q.c[0], q.p[1] - q.c[1]];
+    const la = Math.hypot(a[0], a[1]);
+    const lb = Math.hypot(b[0], b[1]);
+    const turn = la > 0 && lb > 0 ? Math.acos(Math.max(-1, Math.min(1, (a[0] * b[0] + a[1] * b[1]) / (la * lb)))) : 0;
+    if (turn <= maxTurn || depth >= 6) {
+      quads.push(q);
+      return;
+    }
+    const m0 = lerp3(p0, q.c, 0.5);
+    const m1 = lerp3(q.c, q.p, 0.5);
+    const mid = lerp3(m0, m1, 0.5);
+    split(p0, { c: m0, p: mid }, depth + 1);
+    split(mid, { c: m1, p: q.p }, depth + 1);
+  };
+  for (const q of raw) {
+    split(start, q, 0);
+    start = q.p;
+  }
+  return { move: controls[0], quads };
+}
+
+type Vec = [number, number];
+
+function quadAt(p0: RadiusPoint, q: VariableQuad, t: number): RadiusPoint {
+  const a = (1 - t) * (1 - t);
+  const b = 2 * (1 - t) * t;
+  const c = t * t;
+  return [a * p0[0] + b * q.c[0] + c * q.p[0], a * p0[1] + b * q.c[1] + c * q.p[1], a * p0[2] + b * q.c[2] + c * q.p[2]];
+}
+
+/** 구간의 단위 접선. 속도가 0이면(제어점이 끝점과 같으면) 시작점에서 끝점 방향을 쓴다. */
+function quadTangent(p0: RadiusPoint, q: VariableQuad, t: number): Vec {
+  let dx = 2 * ((1 - t) * (q.c[0] - p0[0]) + t * (q.p[0] - q.c[0]));
+  let dy = 2 * ((1 - t) * (q.c[1] - p0[1]) + t * (q.p[1] - q.c[1]));
+  let len = Math.hypot(dx, dy);
+  const scale = Math.hypot(q.p[0] - p0[0], q.p[1] - p0[1]) + Math.hypot(q.c[0] - p0[0], q.c[1] - p0[1]);
+  if (len <= 1e-9 * Math.max(1, scale)) {
+    dx = q.p[0] - p0[0];
+    dy = q.p[1] - p0[1];
+    len = Math.hypot(dx, dy);
+    if (len === 0) return [1, 0];
+  }
+  return [dx / len, dy / len];
+}
+
+/** side +1은 왼쪽(n = (-ty, tx)), -1은 오른쪽 옆선 */
+function offsetAt(p0: RadiusPoint, q: VariableQuad, t: number, side: 1 | -1): Vec {
+  const [x, y, r] = quadAt(p0, q, t);
+  const [tx, ty] = quadTangent(p0, q, t);
+  return [x - ty * r * side, y + tx * r * side];
+}
+
+function cubicAt(a: Vec, c1: Vec, c2: Vec, b: Vec, s: number): Vec {
+  const u = 1 - s;
+  return [
+    u * u * u * a[0] + 3 * u * u * s * c1[0] + 3 * u * s * s * c2[0] + s * s * s * b[0],
+    u * u * u * a[1] + 3 * u * u * s * c1[1] + 3 * u * s * s * c2[1] + s * s * s * b[1],
+  ];
+}
+
+/** 옆선 offsetAt(t)를 t0 → t1(감소해도 된다)로 cubic 여러 개로 맞춘다. 끝점은 정확히 옆선 위에 있다. */
+function fitOffsetSide(p0: RadiusPoint, q: VariableQuad, side: 1 | -1, t0: number, t1: number, tolerance: number): OutlineCommand[] {
+  const h = 1e-5;
+  const deriv = (t: number): Vec => {
+    const ta = Math.max(0, t - h);
+    const tb = Math.min(1, t + h);
+    const a = offsetAt(p0, q, ta, side);
+    const b = offsetAt(p0, q, tb, side);
+    return [(b[0] - a[0]) / (tb - ta), (b[1] - a[1]) / (tb - ta)];
+  };
+  for (let pieces = 1; pieces <= 8; pieces += 1) {
+    const out: OutlineCommand[] = [];
+    let worst = 0;
+    for (let k = 0; k < pieces; k += 1) {
+      const ta = t0 + ((t1 - t0) * k) / pieces;
+      const tb = t0 + ((t1 - t0) * (k + 1)) / pieces;
+      const dt = tb - ta;
+      const a = offsetAt(p0, q, ta, side);
+      const b = offsetAt(p0, q, tb, side);
+      const da = deriv(ta);
+      const db = deriv(tb);
+      const c1: Vec = [a[0] + (da[0] * dt) / 3, a[1] + (da[1] * dt) / 3];
+      const c2: Vec = [b[0] - (db[0] * dt) / 3, b[1] - (db[1] * dt) / 3];
+      for (let s = 1; s <= 7; s += 1) {
+        const want = offsetAt(p0, q, ta + (dt * s) / 8, side);
+        const got = cubicAt(a, c1, c2, b, s / 8);
+        worst = Math.max(worst, Math.hypot(want[0] - got[0], want[1] - got[1]));
+      }
+      out.push({ op: "C", c1x: c1[0], c1y: c1[1], c2x: c2[0], c2y: c2[1], x: b[0], y: b[1] });
+    }
+    if (worst <= tolerance || pieces === 8) return out;
+  }
+  return [];
+}
+
+/**
+ * 중심선 quad 구간 하나의 닫힌 캡슐 윤곽. 굿노트 자체 파일의 순서를 따른다:
+ * 왼쪽 옆선 시작점으로 move, 왼쪽 옆선 cubic, 끝 원호(끝점 중심, 반폭, 시계 방향 표시, 각도 π 감소),
+ * 오른쪽 옆선을 거꾸로 cubic, 시작 원호(시작점 중심, 각도 π 감소). 마지막 원호가 처음 move 점에서 끝난다.
+ */
+export function quadCapsuleOutline(p0: RadiusPoint, q: VariableQuad, tolerance = 0.1): OutlineCommand[] {
+  const out: OutlineCommand[] = [];
+  const left0 = offsetAt(p0, q, 0, 1);
+  out.push({ op: "M", x: left0[0], y: left0[1] });
+  out.push(...fitOffsetSide(p0, q, 1, 0, 1, tolerance));
+  const [t1x, t1y] = quadTangent(p0, q, 1);
+  const endStart = Math.atan2(t1x, -t1y); // +n = (-ty, tx)의 각도
+  out.push({ op: "A", cx: q.p[0], cy: q.p[1], r: q.p[2], a0: endStart, a1: endStart - Math.PI, clockwise: true });
+  out.push(...fitOffsetSide(p0, q, -1, 1, 0, tolerance));
+  const [t0x, t0y] = quadTangent(p0, q, 0);
+  const startStart = Math.atan2(-t0x, t0y); // -n = (ty, -tx)의 각도
+  out.push({ op: "A", cx: p0[0], cy: p0[1], r: p0[2], a0: startStart, a1: startStart - Math.PI, clockwise: true });
+  return out;
+}
+
+/** 중심선 하위 경로의 quad마다 캡슐 윤곽을 만든다(윤곽 수 = quad 수). */
+export function variableOutlines(centerline: ReadonlyArray<VariableSubpath>, tolerance = 0.1): OutlineCommand[][] {
+  const out: OutlineCommand[][] = [];
+  for (const sp of centerline) {
+    let start = sp.move;
+    for (const q of sp.quads) {
+      out.push(quadCapsuleOutline(start, q, tolerance));
+      start = q.p;
+    }
+  }
+  return out;
+}
+
+/** 점과 지름(페이지 단위)으로 만년필이나 붓 경로 전체(중심선 + 윤곽)를 만든다. 반폭 = 지름 / 2. */
+export function buildVariablePen(kind: VariablePenKind, points: ReadonlyArray<Point>, diameters: ReadonlyArray<number>, options: VariableGeometryOptions = {}): VariablePen {
+  const centerline = [variableCenterline(points, diameters.map(d => d / 2), options)];
+  return { kind, version: VARIABLE_PEN_DEFAULTS.version, defaultRadius: kind === "brush" ? VARIABLE_PEN_DEFAULTS.brushDefaultRadius : null, centerline, outlines: variableOutlines(centerline, options.tolerance) };
+}
+
+/** 윤곽 하위 경로를 폴리곤 점으로 펼친다(미리보기, 검증용). 원호는 굿노트 규칙(clockwise = 각도 감소)으로 그린다. */
+export function flattenOutline(sub: ReadonlyArray<OutlineCommand>, step = 0.5): Point[] {
+  const out: Point[] = [];
+  let cur: Point | null = null;
+  const push = (p: Point) => {
+    out.push(p);
+    cur = p;
+  };
+  for (const cmd of sub) {
+    if (cmd.op === "M") push([cmd.x, cmd.y]);
+    else if (cmd.op === "Q" || cmd.op === "C") {
+      const from: Point = cur ?? [cmd.x, cmd.y];
+      const n = 16;
+      for (let s = 1; s <= n; s += 1) {
+        const t = s / n;
+        const u = 1 - t;
+        if (cmd.op === "Q") push([u * u * from[0] + 2 * u * t * cmd.cx + t * t * cmd.x, u * u * from[1] + 2 * u * t * cmd.cy + t * t * cmd.y]);
+        else push(cubicAt([from[0], from[1]], [cmd.c1x, cmd.c1y], [cmd.c2x, cmd.c2y], [cmd.x, cmd.y], t));
+      }
+    } else {
+      const rx = cmd.op === "A" ? cmd.r : cmd.rx;
+      const ry = cmd.op === "A" ? cmd.r : cmd.ry;
+      const rot = cmd.op === "A" ? 0 : cmd.rotation;
+      const tau = 2 * Math.PI;
+      let sweep = cmd.clockwise ? (((cmd.a0 - cmd.a1) % tau) + tau) % tau : (((cmd.a1 - cmd.a0) % tau) + tau) % tau;
+      if (sweep === 0 && cmd.a0 !== cmd.a1) sweep = tau;
+      const dir = cmd.clockwise ? -1 : 1;
+      const n = Math.max(2, Math.ceil((sweep * Math.max(rx, ry)) / step));
+      const cr = Math.cos(rot);
+      const sr = Math.sin(rot);
+      for (let s = 0; s <= n; s += 1) {
+        const a = cmd.a0 + (dir * sweep * s) / n;
+        const px = rx * Math.cos(a);
+        const py = ry * Math.sin(a);
+        push([cmd.cx + cr * px - sr * py, cmd.cy + sr * px + cr * py]);
+      }
+    }
+  }
+  return out;
+}
+
+/** 중심선을 (x, y, r) 표본으로 펼친다(검증용). */
+export function renderVariableSubpath(sp: VariableSubpath, stepsPerQuad = 8): RadiusPoint[] {
+  const out: RadiusPoint[] = [sp.move];
+  let start = sp.move;
+  for (const q of sp.quads) {
+    for (let s = 1; s <= stepsPerQuad; s += 1) out.push(quadAt(start, q, s / stepsPerQuad));
+    start = q.p;
+  }
+  return out;
+}

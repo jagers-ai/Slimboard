@@ -17,7 +17,9 @@
 // - 메타 f16: goodparse는 "객체 클래스 코드(24 잉크, 25 연필, 35 텍스트)"로, goodnotes-codec와 natural-ink는
 //   "스키마 버전 24"로 본다. 우리가 쓰는 값은 어느 해석이든 24로 같다.
 // - 메타 f8: goodnotes-codec는 63비트 임의 장치 ID, natural-ink는 1.
-// - 본문 f3: goodnotes-codec는 펜 종류(0 볼펜은 생략, 1 만년필, 4 붓, 5 연필)로 본다. 볼펜만 쓰므로 넣지 않는다.
+// - 본문 f3: goodnotes-codec는 펜 종류(0 볼펜은 생략, 1 만년필, 4 붓, 5 연필)로 본다. 볼펜은 넣지 않는다.
+//   inkterop(MIT, reader.py _pen_style)은 조사한 표본에서 만년필과 붓 모두 f3 = 1이었고 둘을 레코드로 구별할 수
+//   없었다고 적었다. 그래서 penType을 호출하는 쪽에서 정하게 둔다(기본: 만년필 1, 붓 4, goodnotes-file-document.ts).
 // - 본문 f4: goodnotes-codec는 proto3처럼 0인 채널을 생략하고, natural-ink는 네 채널을 모두 쓴다.
 //
 // 출처: goodparse(형식 사실만, 코드 미사용), Kaih1825/parser-for-goodnotes(MIT), LambertAlpha/natural-ink(MIT),
@@ -43,7 +45,7 @@ import {
   WIRE_LEN,
 } from "./goodnotes-file-protobuf.ts";
 import { appleLz4Decode, isAppleLz4 } from "./goodnotes-file-lz4.ts";
-import { UNIFORM_PEN_SIGNATURE, decodeTpl } from "./goodnotes-file-tpl.ts";
+import { type BrushQuadOrder, type VariablePen, UNIFORM_PEN_SIGNATURE, decodeTpl, decodeVariablePen, isVariablePenSignature } from "./goodnotes-file-tpl.ts";
 
 export const KIND_STROKE = 7;
 export const GOODNOTES_SCHEMA_VERSION = 24;
@@ -134,6 +136,8 @@ export type StrokeInfo = {
   tape: boolean;
   shape: boolean;
   moved: boolean;
+  /** 본문 f3 펜 종류(없으면 0 = 볼펜) */
+  penType: number;
 };
 
 function readColor(field: PbField | undefined): Rgba {
@@ -171,7 +175,17 @@ export function strokeInfo(obj: PageObject): StrokeInfo {
     tape: !!tapeField && tapeField.data.length > 0,
     shape: !!shapeField && shapeField.data.length > 0,
     moved: !!moveField && moveField.data.length > 0,
+    penType: fieldVarint(getField(obj.body, 3)) ?? 0,
   };
+}
+
+/** 만년필이나 붓 획이면 경로(중심선과 윤곽)를 읽는다. 아니면 null. */
+export function variablePenOf(obj: PageObject, options: { brushQuadOrder?: BrushQuadOrder } = {}): VariablePen | null {
+  if (obj.kind !== KIND_STROKE) return null;
+  const blob = getField(obj.body, 2);
+  if (!blob || !isAppleLz4(blob.data)) return null;
+  const image = decodeTpl(appleLz4Decode(blob.data).data);
+  return isVariablePenSignature(image.signature) ? decodeVariablePen(image, options) : null;
 }
 
 /** 복제 본보기로 쓸 만한 볼펜 획인가: 지워지지 않았고, 볼펜 시그니처이며, 형광펜, 테이프, 도형, 이동 기록이 없다. */
@@ -190,6 +204,8 @@ export type StrokeRecordInput = {
   blob: Uint8Array;
   color: Rgba;
   highlighter?: boolean;
+  /** 본문 f3 펜 종류. 없거나 0이면 쓰지 않는다(볼펜). */
+  penType?: number;
 };
 
 /** 버전 도장 {1 counter, 2 tag}. counter 0은 proto3처럼 생략(goodnotes-codec). */
@@ -209,10 +225,14 @@ function colorFields(color: Rgba, dropZero: boolean): PbField[] {
   return out;
 }
 
+function penTypeFields(input: StrokeRecordInput): PbField[] {
+  return input.penType ? [pbVarint(3, input.penType)] : [];
+}
+
 /**
  * natural-ink 방식 획 레코드 쌍(natural-ink 관찰, 공식 아님).
  * 메타 {1 id, 2 {1 1, 2 counter}, 8 1, 9 counter, 14 1, 16 24}
- * 본문 {7 {1 id, 2 blob, 4 rgba(네 채널 모두), 6 "", 7 {1 도장}, 9 "", 15 도장, 20 "", 21 24}}
+ * 본문 {7 {1 id, 2 blob, [3 펜 종류], 4 rgba(네 채널 모두), 6 "", 7 {1 도장}, 9 "", 15 도장, 20 "", 21 24}}
  */
 export function naturalInkStrokeRecords(input: StrokeRecordInput & { counter: number }): [Uint8Array, Uint8Array] {
   const clock = stampMessage(1, input.counter);
@@ -227,6 +247,7 @@ export function naturalInkStrokeRecords(input: StrokeRecordInput & { counter: nu
   const body: PbField[] = [
     pbString(1, input.id),
     pbBytes(2, input.blob),
+    ...penTypeFields(input),
     pbMessage(4, colorFields(input.color, false)),
     ...(input.highlighter ? [pbVarint(5, 1)] : []),
     pbBytes(6, new Uint8Array(0)),
@@ -242,7 +263,7 @@ export function naturalInkStrokeRecords(input: StrokeRecordInput & { counter: nu
 /**
  * goodnotes-codec 방식 획 레코드 쌍(goodnotes-codec 관찰, 공식 아님).
  * 메타 {1 id, 2 {1 1, 2 tag}, 8 device, 9 sequence, 14 5381, 16 24}
- * 본문 {7 {1 id, 2 blob, 4 rgba(0 채널 생략), [5 1], 6 "", 7 {1 {1 1, 2 tag2}}, 9 "", 15 {1 1, 2 tag}, 20 "", 21 24}}
+ * 본문 {7 {1 id, 2 blob, [3 펜 종류], 4 rgba(0 채널 생략), [5 1], 6 "", 7 {1 {1 1, 2 tag2}}, 9 "", 15 {1 1, 2 tag}, 20 "", 21 24}}
  */
 export function codecStrokeRecords(input: StrokeRecordInput & { device: number; sequence: number; tag: number; tag2: number }): [Uint8Array, Uint8Array] {
   const stamp = stampMessage(1, input.tag);
@@ -257,6 +278,7 @@ export function codecStrokeRecords(input: StrokeRecordInput & { device: number; 
   const body: PbField[] = [
     pbString(1, input.id),
     pbBytes(2, input.blob),
+    ...penTypeFields(input),
     pbMessage(4, colorFields(input.color, true)),
     ...(input.highlighter ? [pbVarint(5, 1)] : []),
     pbBytes(6, new Uint8Array(0)),
@@ -270,7 +292,7 @@ export function codecStrokeRecords(input: StrokeRecordInput & { device: number; 
 }
 
 /**
- * 견본 파일의 볼펜 획을 복제해 새 획을 만든다. 바꾸는 것: UUID, 경로 blob, 색, 생성 순번, 버전 도장
+ * 견본 파일의 볼펜 획을 복제해 새 획을 만든다. 바꾸는 것: UUID, 경로 blob, 펜 종류 f3, 색, 생성 순번, 버전 도장
  * (새 객체이므로 {1 1, 2 새 태그}). 지움 표시(메타 f3, 본문 f14)와 이동(f6)은 비운다. 나머지 필드
  * (장치 ID f8, f14, f16, f21, 뜻 모르는 필드)는 견본 값을 그대로 둔다.
  */
@@ -285,6 +307,11 @@ export function cloneStrokeRecords(exemplar: PageObject, input: StrokeRecordInpu
   let body = exemplar.body;
   body = replaceField(body, pbString(1, input.id));
   body = replaceField(body, pbBytes(2, input.blob));
+  body = removeField(body, 3);
+  if (input.penType) {
+    const at = body.findIndex(f => f.number === 2) + 1;
+    body = [...body.slice(0, at), pbVarint(3, input.penType), ...body.slice(at)];
+  }
   const oldColor = fieldMessage(getField(body, 4)) ?? [];
   const dropZero = oldColor.length < 4; // 견본이 0 채널을 생략했으면 같은 방식으로 쓴다
   body = replaceField(body, pbMessage(4, colorFields(input.color, dropZero)));

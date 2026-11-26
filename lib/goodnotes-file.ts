@@ -1,4 +1,4 @@
-// 펜 획을 굿노트 네이티브 파일(.goodnotes)의 볼펜 획 레코드로 쓰는 순수 TS 모듈(진입점).
+// 펜 획을 굿노트 네이티브 파일(.goodnotes)의 볼펜, 만년필, 붓 획 레코드로 쓰는 순수 TS 모듈(진입점).
 //
 // 주 경로: buildGoodnotesDocument(견본 없이 문서 전체 생성, goodnotes-file-document.ts)
 // 보조 경로: buildGoodnotesFromTemplate(사용자가 굿노트에서 내보낸 견본 파일의 한 페이지에 획을 덧붙임)
@@ -27,10 +27,10 @@
 // 11. 견본 페이지의 썸네일은 갱신하지 않는다(굿노트가 다시 만드는지 모른다).
 
 import { type PbField, fieldMessage, fieldNumber, fieldString, getField, readDelimitedRecords, tryDecodeMessage, writeDelimitedRecords } from "./goodnotes-file-protobuf.ts";
-import { type AppleLz4Mode, appleLz4Encode } from "./goodnotes-file-lz4.ts";
-import { type LineControl, type Point, encodeUniformPenTpl, polylineToLinePath } from "./goodnotes-file-tpl.ts";
+import { type AppleLz4Mode } from "./goodnotes-file-lz4.ts";
+import { type LineControl, type Point } from "./goodnotes-file-tpl.ts";
 import { type ExistingStrokePolicy, type PageObject, cloneStrokeRecords, codecStrokeRecords, firstDeviceId, isPlainBallpointStroke, maxSequence, pageObjects, rewritePageWithStrokes } from "./goodnotes-file-page.ts";
-import { type GoodnotesStroke, GOODNOTES_UNITS_PER_PT, notesGroupEvents } from "./goodnotes-file-document.ts";
+import { type GoodnotesStroke, GOODNOTES_UNITS_PER_PT, goodnotesStrokeBlob, notesGroupEvents, strokePenType } from "./goodnotes-file-document.ts";
 import { seededInt, sha1Hex, uuidPlus, uuidV5 } from "./goodnotes-file-ids.ts";
 import { type ZipEntry, type ZipWriteInput, ZIP_DEFLATE, readZip, writeZip, zipEntryData } from "./goodnotes-file-zip.ts";
 
@@ -74,9 +74,14 @@ export function applyFit(points: ReadonlyArray<Point>, t: FitTransform): Point[]
   return points.map(([x, y]) => [t.offsetX + x * t.scale, t.offsetY + y * t.scale] as const);
 }
 
-/** 사진 좌표 획들을 페이지 좌표 획들로 바꾼다. 굵기도 같은 배율로 바꾼다. */
-export function strokesToPage<T extends { points: ReadonlyArray<Point>; width: number }>(strokes: ReadonlyArray<T>, t: FitTransform): Array<T & { points: Point[] }> {
-  return strokes.map(s => ({ ...s, points: applyFit(s.points, t), width: s.width * t.scale }));
+/** 사진 좌표 획들을 페이지 좌표 획들로 바꾼다. 굵기(볼펜 width, 만년필과 붓의 점마다 widths)도 같은 배율로 바꾼다. */
+export function strokesToPage<T extends { points: ReadonlyArray<Point>; width?: number; widths?: ReadonlyArray<number> }>(strokes: ReadonlyArray<T>, t: FitTransform): Array<T & { points: Point[] }> {
+  return strokes.map(s => {
+    const out: T & { points: Point[] } = { ...s, points: applyFit(s.points, t) };
+    if (s.width !== undefined) out.width = s.width * t.scale;
+    if (s.widths !== undefined) out.widths = s.widths.map(w => w * t.scale);
+    return out;
+  });
 }
 
 /** pt 크기를 굿노트 페이지 단위로(굿노트 자체 파일의 배율 11/6). */
@@ -202,7 +207,7 @@ async function memberData(entries: ReadonlyArray<ZipEntry>, name: string): Promi
 }
 
 /**
- * 견본 .goodnotes의 한 페이지에 볼펜 획을 덧붙인다. 다른 ZIP 멤버는 압축 데이터를 그대로 복사한다.
+ * 견본 .goodnotes의 한 페이지에 획(볼펜, 만년필, 붓)을 덧붙인다. 다른 ZIP 멤버는 압축 데이터를 그대로 복사한다.
  * 견본에 평범한 볼펜 획이 있으면 그것을 본보기로 복제하고(뜻 모르는 필드 유지), 없으면 goodnotes-codec 방식 레코드를 만든다.
  */
 export async function buildGoodnotesFromTemplate(input: BuildFromTemplateInput): Promise<BuildFromTemplateResult> {
@@ -234,11 +239,10 @@ export async function buildGoodnotesFromTemplate(input: BuildFromTemplateInput):
   input.pageStrokes.forEach((stroke, si) => {
     const id = uuidV5(`slimboard:${seed}:stroke-${si}`);
     strokeIds.push(id);
-    const path = polylineToLinePath(stroke.points, input.lineControl ?? "midpoint");
-    const blob = appleLz4Encode(encodeUniformPenTpl({ width: stroke.width, subpaths: [path] }), { mode: input.pathEncoding ?? "literal" });
+    const blob = goodnotesStrokeBlob(stroke, { lineControl: input.lineControl ?? "midpoint", mode: input.pathEncoding ?? "literal" });
     const color = stroke.color.length === 3 ? ([stroke.color[0], stroke.color[1], stroke.color[2], 1] as const) : (stroke.color as readonly [number, number, number, number]);
     sequence += 1;
-    const common = { id, blob, color, highlighter: stroke.highlighter, sequence, tag: seededInt(seed, `tag-${si}`, 32), tag2: seededInt(seed, `tag2-${si}`, 32) };
+    const common = { id, blob, color, highlighter: stroke.highlighter, penType: strokePenType(stroke), sequence, tag: seededInt(seed, `tag-${si}`, 32), tag2: seededInt(seed, `tag2-${si}`, 32) };
     records.push(...(exemplar ? cloneStrokeRecords(exemplar, common) : codecStrokeRecords({ ...common, device: device! })));
   });
   const newPage = rewritePageWithStrokes(pageFiles.get(page.noteId)!, records, input.existingStrokes ?? "keep");

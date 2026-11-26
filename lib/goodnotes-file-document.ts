@@ -51,7 +51,16 @@ import {
   writeDelimitedRecords,
 } from "./goodnotes-file-protobuf.ts";
 import { type AppleLz4Mode, appleLz4Encode } from "./goodnotes-file-lz4.ts";
-import { type LineControl, type Point, encodeUniformPenTpl, polylineToLinePath } from "./goodnotes-file-tpl.ts";
+import {
+  type BrushQuadOrder,
+  type LineControl,
+  type Point,
+  type VariableGeometryOptions,
+  buildVariablePen,
+  encodeUniformPenTpl,
+  encodeVariablePenTpl,
+  polylineToLinePath,
+} from "./goodnotes-file-tpl.ts";
 import { type PdfGuide, buildSolidJpeg, buildSolidPdf } from "./goodnotes-file-assets.ts";
 import { type Rgba, GOODNOTES_SCHEMA_VERSION, codecStrokeRecords, naturalInkStrokeRecords, stampMessage } from "./goodnotes-file-page.ts";
 import { naturalInkOrderKey, orderKeys, seededInt, sha1, sha1Hex, toHex, uuidEven, uuidPlus, uuidV5 } from "./goodnotes-file-ids.ts";
@@ -64,7 +73,9 @@ export const A4_PT = { width: (210 * 72) / 25.4, height: (297 * 72) / 25.4 } as 
 
 export type GoodnotesProfile = "codec" | "natural-ink";
 
-export type GoodnotesStroke = {
+/** 볼펜(균일 굵기) 획. pen을 생략하면 볼펜이다. */
+export type GoodnotesBallpointStroke = {
+  pen?: "ballpoint";
   /** 페이지 단위 좌표(왼쪽 위 원점, y 아래). 점 하나면 아주 짧은 구간으로 쓴다. */
   points: ReadonlyArray<Point>;
   /** 0~1 RGB 또는 RGBA */
@@ -73,6 +84,52 @@ export type GoodnotesStroke = {
   width: number;
   highlighter?: boolean;
 };
+
+/**
+ * 만년필이나 붓(가변 굵기) 획. 굵기 단위: 점마다 페이지 단위 지름을 받아 반폭(지름 / 2)으로 저장한다.
+ * goodparse는 참조 PDF와 비교해 가변 굵기 펜이 저장 반폭의 두 배(페이지 단위)로 그려진다고 측정했다
+ * (붉은 테이프 반폭 9.0 → 9.83pt, 6/11 배율). 볼펜 저장값의 0.5pt/값 같은 보정은 없다.
+ * 점 하나면 원 하나(아주 짧은 구간)로 쓴다. lib/ink-medial-strokes.ts의 { points, widths }에 pen만 붙이면 된다.
+ */
+export type GoodnotesVariableStroke = {
+  pen: "fountain" | "brush";
+  points: ReadonlyArray<Point>;
+  /** 점마다 지름(페이지 단위). points와 길이가 같다. */
+  widths: ReadonlyArray<number>;
+  color: readonly [number, number, number] | Rgba;
+  highlighter?: boolean;
+  /** 본문 f3 펜 종류. 기본 만년필 1, 붓 4(codec). inkterop은 붓도 1로 관찰했다. 실기기 비교용. */
+  penType?: number;
+  /** 붓 quad 값 순서(실기기 비교용). 기본 "goodparse". */
+  brushQuadOrder?: BrushQuadOrder;
+  /** 붓 기본 반폭 저장값. 기본 -1(goodparse 관찰). codec 생성기는 2 × max(반폭). */
+  brushDefaultRadius?: number;
+  geometry?: VariableGeometryOptions;
+};
+
+export type GoodnotesStroke = GoodnotesBallpointStroke | GoodnotesVariableStroke;
+
+export function isVariableStroke(stroke: GoodnotesStroke): stroke is GoodnotesVariableStroke {
+  return stroke.pen === "fountain" || stroke.pen === "brush";
+}
+
+/** 본문 f3에 쓸 펜 종류(볼펜은 undefined). */
+export function strokePenType(stroke: GoodnotesStroke): number | undefined {
+  if (!isVariableStroke(stroke)) return undefined;
+  return stroke.penType ?? (stroke.pen === "brush" ? 4 : 1);
+}
+
+/** 획 하나의 경로 blob(Apple LZ4로 감싼 tpl). */
+export function goodnotesStrokeBlob(stroke: GoodnotesStroke, options: { lineControl?: LineControl; mode?: AppleLz4Mode } = {}): Uint8Array {
+  const mode = options.mode ?? "literal";
+  if (isVariableStroke(stroke)) {
+    const pen = buildVariablePen(stroke.pen, stroke.points, stroke.widths, stroke.geometry);
+    const tpl = encodeVariablePenTpl({ ...pen, defaultRadius: stroke.brushDefaultRadius ?? undefined, brushQuadOrder: stroke.brushQuadOrder });
+    return appleLz4Encode(tpl, { mode });
+  }
+  const path = polylineToLinePath(stroke.points, options.lineControl ?? "midpoint");
+  return appleLz4Encode(encodeUniformPenTpl({ width: stroke.width, subpaths: [path] }), { mode });
+}
 
 export type GoodnotesPageInput = {
   /** 페이지 크기(페이지 단위) */
@@ -149,7 +206,10 @@ function validateInput(input: BuildGoodnotesDocumentInput): void {
     }
     p.strokes.forEach((s, si) => {
       if (s.points.length === 0) throw new Error(`GOODNOTES_EMPTY_STROKE page ${pi} stroke ${si}`);
-      if (!(s.width > 0 && Number.isFinite(s.width))) throw new Error(`GOODNOTES_BAD_WIDTH page ${pi} stroke ${si}`);
+      if (isVariableStroke(s)) {
+        if (s.widths.length !== s.points.length) throw new Error(`GOODNOTES_WIDTHS_LENGTH page ${pi} stroke ${si}`);
+        for (const w of s.widths) if (!(w > 0 && Number.isFinite(w))) throw new Error(`GOODNOTES_BAD_WIDTH page ${pi} stroke ${si}`);
+      } else if (!(s.width > 0 && Number.isFinite(s.width))) throw new Error(`GOODNOTES_BAD_WIDTH page ${pi} stroke ${si}`);
       for (const [x, y] of s.points) if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`GOODNOTES_BAD_POINT page ${pi} stroke ${si}`);
     });
   });
@@ -173,8 +233,7 @@ function inputDigest(input: BuildGoodnotesDocumentInput): string {
 }
 
 function strokeBlob(stroke: GoodnotesStroke, lineControl: LineControl, mode: AppleLz4Mode): Uint8Array {
-  const path = polylineToLinePath(stroke.points, lineControl);
-  return appleLz4Encode(encodeUniformPenTpl({ width: stroke.width, subpaths: [path] }), { mode });
+  return goodnotesStrokeBlob(stroke, { lineControl, mode });
 }
 
 type Paper = { pdf: Uint8Array; pdfPage: number; width: number; height: number; key: string };
@@ -287,6 +346,7 @@ async function buildNaturalInk(input: BuildGoodnotesDocumentInput, seed: string)
           blob: strokeBlob(stroke, lineControl, mode),
           color: rgba(stroke.color),
           highlighter: stroke.highlighter,
+          penType: strokePenType(stroke),
           counter: si + 1,
         }),
       );
@@ -468,6 +528,7 @@ async function buildCodec(input: BuildGoodnotesDocumentInput, seed: string): Pro
           blob: strokeBlob(stroke, lineControl, mode),
           color: rgba(stroke.color),
           highlighter: stroke.highlighter,
+          penType: strokePenType(stroke),
           device,
           sequence,
           tag: rand32(`stroke-tag-${pi}-${si}`),

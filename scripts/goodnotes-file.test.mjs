@@ -766,3 +766,252 @@ test('fitPhotoToPage: 왼쪽 위 정렬 기본, 가운데 정렬, 굵기 배율'
   assert.equal(s.color, 'black');
   assert.ok(Math.abs(GOODNOTES_UNITS_PER_PT - 11 / 6) < 1e-15);
 });
+
+// ---------------------------------------------------------------------------
+// 만년필과 붓(가변 굵기)
+
+import {
+  FOUNTAIN_PEN_SIGNATURE, BRUSH_PEN_SIGNATURE, encodeVariablePenTpl, decodeVariablePen, buildVariablePen, variableCenterline,
+  variableOutlines, flattenOutline, renderVariableSubpath, variablePenOf, isVariableStroke,
+} from '../lib/goodnotes-file.ts';
+
+const f32 = Math.fround;
+const RAMP = Array.from({ length: 41 }, (_, i) => [100 + i * 15, 200]);
+const RAMP_W = RAMP.map((_, i) => 1 + (11 * i) / 40);
+const S_CURVE = Array.from({ length: 61 }, (_, i) => [100 + i * 10, 500 + 80 * Math.sin((i / 60) * 2 * Math.PI)]);
+const S_W = S_CURVE.map((_, i) => 3 + 9 * Math.sin((i / 60) * Math.PI));
+
+/** nonzero 규칙으로 점이 윤곽들 안에 있는가 */
+function insideOutlines(p, polygons) {
+  for (const poly of polygons) {
+    let wind = 0;
+    for (let k = 0; k < poly.length; k += 1) {
+      const a = poly[k];
+      const b = poly[(k + 1) % poly.length];
+      if (a[1] <= p[1]) {
+        if (b[1] > p[1] && (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]) > 0) wind += 1;
+      } else if (b[1] <= p[1] && (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]) < 0) wind -= 1;
+    }
+    if (wind !== 0) return true;
+  }
+  return false;
+}
+
+function rawValues(tpl) {
+  return decodeTpl(tpl).values;
+}
+
+test('가변 굵기 시그니처: codec, goodparse, parser-for-goodnotes 기록과 정확히 같다', () => {
+  assert.equal(FOUNTAIN_PEN_SIGNATURE, 'vA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)');
+  assert.equal(BRUSH_PEN_SIGNATURE, 'vuA(v)A(u)A(u)A(v)A(v)A(u)A(u)A(u)A(u)A(v)');
+  assert.equal(UNIFORM_PEN_SIGNATURE, 'vuA(v)A(S(uu))A(S(uuuu))vA(f)', '볼펜 시그니처는 그대로');
+  const pen = buildVariablePen('fountain', RAMP, RAMP_W);
+  assert.equal(decodeTpl(encodeVariablePenTpl(pen)).signature, FOUNTAIN_PEN_SIGNATURE);
+  assert.equal(decodeTpl(encodeVariablePenTpl({ ...pen, kind: 'brush' })).signature, BRUSH_PEN_SIGNATURE);
+});
+
+test('만년필 왕복: 중심선 제어점 = 입력 점, 반폭 = 지름/2, 다시 읽어도 같다', () => {
+  for (const [points, widths] of [[RAMP, RAMP_W], [S_CURVE, S_W]]) {
+    const pen = buildVariablePen('fountain', points, widths);
+    const sp = pen.centerline[0];
+    assert.deepEqual(sp.move, [points[0][0], points[0][1], widths[0] / 2]);
+    // 중점 2차 Bézier: 끝점 = 연속한 제어점의 중점, 첫 점과 끝 점은 곡선 위
+    const drawn = renderVariableSubpath(sp, 4);
+    assert.deepEqual(drawn.at(-1).slice(0, 2), points.at(-1));
+    assert.ok(polylineHausdorff(drawn.map(p => [p[0], p[1]]), points) < 2, '곡선이 점들 곁을 지난다');
+    const decoded = decodeVariablePen(decodeTpl(encodeVariablePenTpl(pen)));
+    assert.equal(decoded.kind, 'fountain');
+    assert.equal(decoded.version, 2);
+    assert.equal(decoded.defaultRadius, null);
+    const r32 = p => p.map(f32);
+    assert.deepEqual(decoded.centerline[0].move, r32(sp.move));
+    assert.equal(decoded.centerline[0].quads.length, sp.quads.length);
+    decoded.centerline[0].quads.forEach((q, k) => {
+      assert.deepEqual(q.c, r32(sp.quads[k].c));
+      assert.deepEqual(q.p, r32(sp.quads[k].p));
+    });
+    // 입력 점마다 제어점 하나(나누지 않은 구간), 반폭이 같은지
+    const controls = sp.quads.map(q => q.c);
+    for (let i = 1; i < points.length; i += 1) {
+      const c = controls.find(c => c[0] === points[i][0] && c[1] === points[i][1]);
+      assert.ok(c, `점 ${i}가 제어점에 있다`);
+      assert.equal(c[2], widths[i] / 2);
+    }
+    assert.equal(decoded.outlines.length, sp.quads.length);
+  }
+});
+
+test('만년필 레이아웃: 명령 0/1, 윤곽 수 = quad 수, 명령 수 배열 합 = 명령 수, 원호는 시계 방향 표시', () => {
+  const pen = buildVariablePen('fountain', S_CURVE, S_W);
+  const [version, kinds, moves, quads, counts, types, oMoves, oQuads, cubics, arcs, cw] = rawValues(encodeVariablePenTpl(pen));
+  assert.equal(version, 2);
+  assert.deepEqual(kinds, [0, ...pen.centerline[0].quads.map(() => 1)]);
+  assert.equal(moves.length, 3);
+  assert.equal(quads.length, 6 * pen.centerline[0].quads.length);
+  assert.equal(counts.length, pen.centerline[0].quads.length, '굿노트가 죽지 않는 조건: quad 구간마다 윤곽 하나');
+  assert.equal(counts.reduce((a, b) => a + b, 0), types.length);
+  assert.ok(types.every(t => [0, 2, 3].includes(t)));
+  assert.equal(oMoves.length, 2 * types.filter(t => t === 0).length);
+  assert.equal(oQuads.length, 0);
+  assert.equal(cubics.length, 6 * types.filter(t => t === 2).length);
+  assert.equal(arcs.length, 5 * types.filter(t => t === 3).length);
+  assert.ok(cw.length === types.filter(t => t === 3).length && cw.every(v => v === 1));
+  // 하위 경로마다 move, cubic…, 원호, cubic…, 원호(굿노트 자체 순서)
+  let at = 0;
+  for (const n of counts) {
+    const sub = types.slice(at, at + n);
+    at += n;
+    assert.equal(sub[0], 0);
+    assert.equal(sub.at(-1), 3);
+    assert.equal(sub.filter(t => t === 3).length, 2);
+    assert.equal(sub.filter(t => t === 0).length, 1);
+    const firstArc = sub.indexOf(3);
+    assert.ok(firstArc > 1 && sub.slice(1, firstArc).every(t => t === 2) && sub.slice(firstArc + 1, -1).every(t => t === 2) && firstArc < n - 2);
+  }
+  // 직선 구간은 옆선 cubic 하나씩: [0,2,3,2,3]
+  const ramp = rawValues(encodeVariablePenTpl(buildVariablePen('fountain', RAMP, RAMP_W)));
+  assert.ok(ramp[4].every(n => n === 5));
+  assert.deepEqual(ramp[5].slice(0, 5), [0, 2, 3, 2, 3]);
+  // 윤곽 수가 quad 수와 다르면 쓰지 않는다
+  assert.throws(() => encodeVariablePenTpl({ ...pen, outlines: [pen.outlines.flat()] }), /TPL_OUTLINE_COUNT_MISMATCH/);
+});
+
+test('윤곽: 하위 경로마다 닫혀 있고, 굵기 안을 덮고 밖은 비운다', () => {
+  for (const [points, widths, outsideCheck] of [[RAMP, RAMP_W, true], [S_CURVE, S_W, false]]) {
+    const pen = decodeVariablePen(decodeTpl(encodeVariablePenTpl(buildVariablePen('fountain', points, widths))));
+    const polys = pen.outlines.map(o => flattenOutline(o, 0.2));
+    for (const poly of polys) {
+      const [a, b] = [poly[0], poly.at(-1)];
+      assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-3, '마지막 원호가 첫 move 점에서 끝난다');
+    }
+    // 이어지는 명령 끝점과 다음 명령 시작점이 맞는다(원호 시작점 포함)
+    for (const sub of pen.outlines) {
+      let cur = [sub[0].x, sub[0].y];
+      for (const cmd of sub.slice(1)) {
+        if (cmd.op === 'A') {
+          const s = [cmd.cx + cmd.r * Math.cos(cmd.a0), cmd.cy + cmd.r * Math.sin(cmd.a0)];
+          assert.ok(Math.hypot(s[0] - cur[0], s[1] - cur[1]) < 1e-3, '원호 시작점 = 현재 점');
+          assert.ok(Math.abs(cmd.a0 - cmd.a1 - Math.PI) < 1e-5 && cmd.clockwise);
+          cur = [cmd.cx + cmd.r * Math.cos(cmd.a1), cmd.cy + cmd.r * Math.sin(cmd.a1)];
+        } else cur = [cmd.x, cmd.y];
+      }
+    }
+    const samples = renderVariableSubpath(pen.centerline[0], 6);
+    for (let k = 1; k < samples.length - 1; k += 3) {
+      const [x, y, r] = samples[k];
+      const [px, py] = samples[k - 1];
+      const [nx, ny] = samples[k + 1];
+      const len = Math.hypot(nx - px, ny - py) || 1;
+      const n = [-(ny - py) / len, (nx - px) / len];
+      for (const s of [-0.9, -0.5, 0, 0.5, 0.9]) assert.ok(insideOutlines([x + n[0] * r * s, y + n[1] * r * s], polys), `안쪽 ${k} ${s}`);
+      if (outsideCheck) for (const s of [-1.15, 1.15]) assert.ok(!insideOutlines([x + n[0] * r * s, y + n[1] * r * s], polys), `바깥 ${k} ${s}`);
+    }
+  }
+});
+
+test('붓: 기본 반폭 u = -1, 명령 2/3과 윤곽 코드 +2, quad 값 순서 두 가지', () => {
+  const pen = buildVariablePen('brush', S_CURVE, S_W);
+  assert.equal(pen.defaultRadius, -1);
+  const tpl = encodeVariablePenTpl(pen);
+  const [version, defBits, kinds, , quads, counts, types, , , , arcs, cw] = rawValues(tpl);
+  assert.equal(version, 2);
+  assert.equal(bitsToFloat32(defBits), -1);
+  assert.deepEqual(kinds, [2, ...pen.centerline[0].quads.map(() => 3)]);
+  assert.ok(types.every(t => [2, 4, 5].includes(t)));
+  assert.equal(counts.length, pen.centerline[0].quads.length);
+  assert.ok(cw.every(v => v === 1) && arcs.length === 5 * cw.length);
+  // goodparse 순서 (cx, cy, x, y, cr, r)
+  const q0 = pen.centerline[0].quads[1];
+  assert.deepEqual(quads.slice(6, 12).map(bitsToFloat32), [q0.c[0], q0.c[1], q0.p[0], q0.p[1], q0.c[2], q0.p[2]].map(f32));
+  const back = decodeVariablePen(decodeTpl(tpl));
+  assert.equal(back.kind, 'brush');
+  assert.deepEqual(back.centerline[0].quads[1].c, q0.c.map(f32));
+  assert.deepEqual(back.centerline[0].quads[1].p, q0.p.map(f32));
+  // codec 순서 (cx, cy, cr, x, y, r)
+  const codec = encodeVariablePenTpl({ ...pen, brushQuadOrder: 'codec', defaultRadius: 24 });
+  const cv = rawValues(codec);
+  assert.equal(bitsToFloat32(cv[1]), 24);
+  assert.deepEqual(cv[4].slice(6, 12).map(bitsToFloat32), [q0.c[0], q0.c[1], q0.c[2], q0.p[0], q0.p[1], q0.p[2]].map(f32));
+  assert.deepEqual(decodeVariablePen(decodeTpl(codec), { brushQuadOrder: 'codec' }).centerline[0].quads[1].p, q0.p.map(f32));
+  // 만년필 윤곽 명령은 붓 윤곽 명령 - 2
+  const fountainTypes = rawValues(encodeVariablePenTpl({ ...pen, kind: 'fountain' }))[5];
+  assert.deepEqual(types, fountainTypes.map(t => t + 2));
+});
+
+test('붓 디코더: 자기 반폭이 없는 노드(0/1)는 기본 반폭, 회전 값(bit2)은 건너뛴다', () => {
+  const b = float32ToBits;
+  const tpl = encodeTpl({
+    signature: BRUSH_PEN_SIGNATURE,
+    values: [2, b(1.5), [0, 1, 7], [b(1), b(2)], [b(2), b(2), b(3), b(2), b(4), b(5), b(6), b(7), b(8), b(9), 0, 0, 0], [], [], [], [], [], [], []],
+  });
+  const pen = decodeVariablePen(decodeTpl(tpl));
+  assert.deepEqual(pen.centerline[0].move, [1, 2, 1.5]);
+  assert.deepEqual(pen.centerline[0].quads[0], { c: [2, 2, 1.5], p: [3, 2, 1.5] });
+  assert.deepEqual(pen.centerline[0].quads[1], { c: [4, 5, 8], p: [6, 7, 9] });
+  assert.throws(() => decodeVariablePen(decodeTpl(encodeTpl({ signature: BRUSH_PEN_SIGNATURE, values: [2, b(1), [0], [b(1), b(2), b(3)], [], [], [], [], [], [], [], []] }))), /TPL_NODE_COUNT_MISMATCH/);
+});
+
+test('점 하나짜리 획: quad 하나, 윤곽 하나가 반폭 원이다', () => {
+  for (const kind of ['fountain', 'brush']) {
+    const pen = decodeVariablePen(decodeTpl(encodeVariablePenTpl(buildVariablePen(kind, [[300, 300]], [14]))));
+    assert.equal(pen.centerline.length, 1);
+    assert.equal(pen.centerline[0].quads.length, 1);
+    assert.equal(pen.outlines.length, 1);
+    const poly = flattenOutline(pen.outlines[0], 0.2);
+    for (const [x, y] of poly) assert.ok(Math.abs(Math.hypot(x - 300.005, y - 300) - 7) < 0.02, '반폭 7 원');
+    assert.ok(insideOutlines([300, 300], [poly]) && insideOutlines([306, 300], [poly]) && !insideOutlines([308, 300], [poly]));
+  }
+  // 같은 점이 이어지면 하나로 합치고 큰 반폭을 쓴다
+  const sp = variableCenterline([[1, 1], [1, 1]], [2, 3]);
+  assert.equal(sp.move[2], 3);
+  assert.equal(variableOutlines([sp]).length, 1);
+  assert.throws(() => variableCenterline([[0, 0]], [1, 2]), /PATH_RADII_LENGTH/);
+});
+
+test('buildGoodnotesDocument: 만년필, 붓, 볼펜을 한 쪽에 쓰고 f3와 경로를 되읽는다', async () => {
+  const strokes = [
+    { points: RAMP, color: [0, 0, 0], width: 2 },
+    { pen: 'fountain', points: RAMP, widths: RAMP_W, color: [0, 0, 1] },
+    { pen: 'brush', points: S_CURVE, widths: S_W, color: [1, 0, 0] },
+    { pen: 'brush', points: [[50, 50]], widths: [10], color: [0, 0, 0], penType: 1 },
+  ];
+  assert.deepEqual(strokes.map(isVariableStroke), [false, true, true, true]);
+  for (const profile of ['codec', 'natural-ink']) {
+    const bytes = await buildGoodnotesDocument({ title: '가변', profile, idSeed: 'v', createdAt: new Date(Date.UTC(2026, 10, 26)), pages: [{ width: 1091, height: 1543, strokes }] });
+    const entries = readZip(bytes);
+    const files = await readZipFiles(bytes);
+    const [page] = listTemplatePages({ notesIndex: files.get('index.notes.pb'), events: files.get('index.events.pb'), names: entries.map(e => e.name) });
+    const objs = pageObjects(files.get(`notes/${page.noteId}`));
+    assert.deepEqual(objs.map(o => strokeInfo(o).penType), [0, 1, 4, 1]);
+    assert.deepEqual(objs.map(o => strokeInfo(o).signature), [UNIFORM_PEN_SIGNATURE, FOUNTAIN_PEN_SIGNATURE, BRUSH_PEN_SIGNATURE, BRUSH_PEN_SIGNATURE]);
+    assert.equal(variablePenOf(objs[0]), null);
+    const body = objs[1].body.map(f => f.number);
+    assert.deepEqual(body.slice(0, 4), [1, 2, 3, 4], 'f3는 f2 뒤');
+    const fountain = variablePenOf(objs[1]);
+    assert.equal(fountain.centerline[0].quads.length, fountain.outlines.length);
+    assert.equal(fountain.centerline[0].move[2], f32(RAMP_W[0] / 2));
+    const brush = variablePenOf(objs[2]);
+    assert.equal(brush.kind, 'brush');
+    assert.equal(variablePenOf(objs[3]).outlines.length, 1);
+    assert.ok(isPlainBallpointStroke(objs[0]) && !isPlainBallpointStroke(objs[1]));
+  }
+  await assert.rejects(buildGoodnotesDocument({ title: 'x', pages: [{ width: 9, height: 9, strokes: [{ pen: 'fountain', points: [[1, 1], [2, 2]], widths: [1], color: [0, 0, 0] }] }] }), /GOODNOTES_WIDTHS_LENGTH/);
+  await assert.rejects(buildGoodnotesDocument({ title: 'x', pages: [{ width: 9, height: 9, strokes: [{ pen: 'brush', points: [[1, 1]], widths: [0], color: [0, 0, 0] }] }] }), /GOODNOTES_BAD_WIDTH/);
+});
+
+test('buildGoodnotesFromTemplate: 볼펜 견본을 복제해 만년필 획을 쓰면 f3 = 1이 붙는다', async () => {
+  const { zip, noteId } = await syntheticTemplate();
+  const r = await buildGoodnotesFromTemplate({ template: zip, pageStrokes: [{ pen: 'fountain', points: RAMP, widths: RAMP_W, color: [0, 0, 0] }], idSeed: 'f' });
+  const o = pageObjects((await readZipFiles(r.bytes)).get(`notes/${noteId}`)).at(-1);
+  assert.equal(strokeInfo(o).penType, 1);
+  assert.equal(strokeInfo(o).signature, FOUNTAIN_PEN_SIGNATURE);
+  assert.equal(fieldVarint(getField(o.meta, 99)), 4242, '견본 필드 유지');
+});
+
+test('strokesToPage: 만년필 widths도 같은 배율', () => {
+  const t = { scale: 0.5, offsetX: 10, offsetY: 0 };
+  const [s] = strokesToPage([{ pen: 'brush', points: [[2, 2], [4, 4]], widths: [6, 8], color: [0, 0, 0] }], t);
+  assert.deepEqual(s.points, [[11, 1], [12, 2]]);
+  assert.deepEqual(s.widths, [3, 4]);
+  assert.equal(s.width, undefined);
+});
