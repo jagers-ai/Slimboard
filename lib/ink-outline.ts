@@ -1,11 +1,22 @@
 /**
  * 화이트보드 사진에서 손글씨를 윤곽(채움 모양)으로 뽑는다.
  *
- * v0: 시험 코드(윤곽 x2) 이식본. 측정 후 다듬는다.
+ * 단계
+ * 1. 긴 변 maxSide 이하로 줄이고(면적 평균), 배경 밝기를 추정해 농도 D = (배경 - 휘도) / 배경을 구한다.
+ * 2. 농도의 바탕 수준과 잡음을 최빈값 기준으로 재서 문턱 low, high를 정한다.
+ * 3. 굵은 덩어리(테두리, 자석, 그림자)와 그 둘레를 제외하고, low 이상인 곳을 1px 넓혀 그룹으로 묶는다.
+ * 4. 그룹이 있는 곳만 Lanczos3로 2배 확대한 농도에 국소 문턱 t = max(low, min((국소최대 + 국소최소) / 2, 0.6 국소최대))을
+ *    적용한다. 창 크기는 대표 획 굵기에서 정한다.
+ * 5. 번져서 붙은 두 획 사이와 메워진 글자 속의 골짜기를 잘라 낸다(cutValleys).
+ * 6. 0 등고선을 marching squares로 따서 고리(바깥 고리와 구멍)를 만들고, 색이 섞인 조각은 색 경계에서 나눈다.
+ * 7. 조각을 넓이, 최고 농도, 칸별 잡음, 굵기, 덩어리와의 거리로 걸러 지운 자국, 얼룩, 그림자, 잡음 알갱이를 뺀다.
+ * 8. 고리를 Ramer-Douglas-Peucker로 줄이고 입력 픽셀 좌표로 돌려준다.
+ *
+ * 출력 좌표는 입력 이미지 픽셀의 연속 좌표다(픽셀 (i, j)의 중심이 (i + 0.5, j + 0.5)). 한 모양의 고리들은
+ * 짝수-홀수 규칙으로 채운다. 브라우저, Web Worker, Node에서 외부 패키지 없이 돈다.
  */
 
 import {
-  contrastNoise,
   downsample,
   estimateBackground,
   inkContrastMap,
@@ -29,11 +40,17 @@ export interface InkOutlineShape {
 }
 
 export interface InkOutlineOptions {
+  /** 처리 해상도의 긴 변(px). 입력이 더 크면 줄여서 처리한다. 기본 2000. */
   maxSide?: number;
+  /** 잉크로 볼 최소 농도(배경 대비 어두운 비율). 기본 0.14. */
   inkContrast?: number;
+  /** 이보다 굵은 덩어리는 글씨가 아닌 물체로 본다(입력 px). */
   maxStrokeWidth?: number;
+  /** 고리 단순화 허용 오차(입력 px). 기본은 획 굵기의 5%. */
   simplifyTolerance?: number;
+  /** 모양 수 상한. 넘으면 작은 것부터 버린다. */
   maxShapes?: number;
+  /** 전체 꼭짓점 수 상한. 넘으면 작은 것부터 버린다. */
   maxPoints?: number;
 }
 
@@ -41,20 +58,32 @@ export interface InkOutlineResult {
   width: number;
   height: number;
   shapes: InkOutlineShape[];
+  /** 상한 때문에 모양을 버렸으면 true. */
   truncated: boolean;
+  /** 처리 해상도 / 입력 해상도. */
   scale: number;
+  /** 사진 전체의 대표 획 굵기(입력 px). */
   strokeWidth: number;
 }
 
 const DEFAULTS = { maxSide: 2000, maxShapes: 20000, maxPoints: 600000, inkContrast: 0.14 };
 const COLORS: InkColor[] = ["black", "red", "blue", "green"];
 
-// 실험용 조정값(정리 때 상수로 굳힌다)
-const TUNE: Record<string, number> = { candLow: 1, candRaw: 0, cap: 0.65, rw: 1, rm: 0.7 };
-function tune(): Record<string, number> {
-  const g = (globalThis as unknown as { __inkOutlineTune?: Record<string, number> }).__inkOutlineTune;
-  return g ? { ...TUNE, ...g } : TUNE;
-}
+/** 국소 문턱의 상한: 국소 최대 농도에 곱하는 비율. */
+const THRESHOLD_CAP = 0.6;
+/** 국소 최소를 재는 창 반경(획 굵기 배수). */
+const MIN_WINDOW = 0.8;
+/** 국소 최대를 재는 창 반경(획 굵기 배수). */
+const MAX_WINDOW = 0.7;
+/**
+ * 조각의 최고 농도가 이보다 낮으면 버린다. 지운 자국의 잔상과 얼룩은 0.16 안팎에서 멈추고,
+ * 흐리고 작은 글씨도 0.2 아래로 내려가는 일이 드물다.
+ */
+const MIN_PEAK = 0.18;
+/** 살짝 흐린 1배 농도로 잰 최고값의 하한. 넓고 옅은 자국은 잡음 알갱이 하나로 MIN_PEAK를 넘기도 한다. */
+const MIN_PEAK_SMOOTH = 0.15;
+/** 조각의 최고 농도가 칸별 바탕 수준 + 잡음의 이 배수보다 낮으면 잡음 알갱이로 본다. */
+const NOISE_K = 6;
 
 function emptyResult(width: unknown, height: unknown, scale = 1): InkOutlineResult {
   const safe = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -106,6 +135,50 @@ function backgroundNoise(d: Float32Array): { median: number; sigma: number } {
   }
   const bw = span / bins;
   return { median: lo + (mb + 0.5) * bw, sigma: 1.4826 * Math.max(0.5, k) * bw };
+}
+
+/**
+ * 칸마다 대비 지도(흐리지 않은 것)의 바탕 수준과 잡음을 잰다. 조명이 어두운 곳은 같은 센서 잡음도 대비로는
+ * 커지므로 사진 전체의 잡음 하나로는 어두운 구석의 잡음 알갱이를 거르지 못한다. 잉크는 값을 위로만 밀므로
+ * 글씨가 칸의 3/4을 덮지 않는 한 아래쪽 분위수(10%, 25%)는 바탕이다. 그 차이로 잡음을 재고, 바탕이 고르지
+ * 않은 칸이 잡음을 부풀리지 않게 이웃 3x3 칸의 최솟값을 쓴다.
+ */
+function localNoise(raw: Float32Array, pw: number, ph: number, block: number): { gw: number; gh: number; level: Float32Array; sigma: Float32Array } {
+  const gw = Math.ceil(pw / block);
+  const gh = Math.ceil(ph / block);
+  const level = new Float32Array(gw * gh);
+  const sig = new Float32Array(gw * gh);
+  const step = block >= 16 ? 2 : 1;
+  const buf = new Float32Array(Math.ceil(block / step) ** 2);
+  for (let by = 0; by < gh; by++) {
+    for (let bx = 0; bx < gw; bx++) {
+      let n = 0;
+      const y1 = Math.min(ph, (by + 1) * block);
+      const x1 = Math.min(pw, (bx + 1) * block);
+      for (let y = by * block; y < y1; y += step) for (let x = bx * block; x < x1; x += step) buf[n++] = raw[y * pw + x];
+      const a = buf.subarray(0, n).sort();
+      const q25 = a[n >> 2];
+      const s = (q25 - a[Math.floor(n * 0.1)]) / 0.6071;
+      level[by * gw + bx] = q25 + 0.6745 * s;
+      sig[by * gw + bx] = s;
+    }
+  }
+  const sigma = new Float32Array(gw * gh);
+  for (let by = 0; by < gh; by++) {
+    for (let bx = 0; bx < gw; bx++) {
+      let v = Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = by + dy;
+        if (yy < 0 || yy >= gh) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = bx + dx;
+          if (xx >= 0 && xx < gw && sig[yy * gw + xx] < v) v = sig[yy * gw + xx];
+        }
+      }
+      sigma[by * gw + bx] = v;
+    }
+  }
+  return { gw, gh, level, sigma };
 }
 
 function classifyColor(tr: number, tg: number, tb: number): number {
@@ -295,6 +368,91 @@ function boxBlur(a: Float32Array, W: number, H: number, r: number): Float32Array
 }
 
 // ---------------------------------------------------------------------------
+// 골짜기 자르기
+
+/** 골짜기를 재는 거리(획 굵기 배수). */
+const VALLEY_REACH = 0.5;
+/** 양쪽보다 이 비율 밑으로 옅으면 골짜기로 본다. */
+const VALLEY_DEPTH = 0.85;
+/** 떼어 낸 두 덩어리가 모두 이 넓이(획 굵기 제곱 배수) 이상일 때만 자른다. 작은 조각은 같은 글자의 일부로 본다. */
+const VALLEY_MIN_PART = 4;
+
+/**
+ * 흐린 사진에서는 가까운 두 획 사이 틈과 작은 글자의 속(ㅇ, ㅁ)이 번져 문턱을 넘는다. 그런 곳은 농도가 양쪽
+ * (거리 L)보다 확실히 낮은 골짜기다. 골짜기 픽셀을 잉크에서 빼되, 뺀 자리가 실제로 두 덩어리를 떼어 놓거나
+ * 덩어리 안쪽에 새 구멍을 낼 때만 남긴다. 한 획 안의 얼룩이나 획이 만나는 안쪽 모서리처럼 빼도 아무것도
+ * 떨어지지 않는 곳은 되돌린다(고리 모양 글자에서 고리가 끊겨 구멍이 새는 일을 막는다). 떨어지는 쪽이
+ * minPart보다 작으면 같은 글자의 가는 부분으로 보고 되돌린다. F는 제자리에서 바꾼다.
+ */
+function cutValleys(F: Float32Array, D: Float32Array, W: number, H: number, L: number, beta: number, minPart: number): void {
+  const S = boxBlur(Float32Array.from(D), W, H, 1);
+  const d = Math.max(1, Math.round(L * Math.SQRT1_2));
+  const offs = [L, L * W, d * (W + 1), d * (W - 1)];
+  const cut = new Uint8Array(W * H);
+  let any = false;
+  for (let Y = L; Y < H - L; Y++) {
+    for (let X = L; X < W - L; X++) {
+      const i = Y * W + X;
+      if (F[i] <= 0) continue;
+      const v = S[i];
+      for (const o of offs) {
+        const a = S[i + o];
+        const b = S[i - o];
+        if (v < beta * (a < b ? a : b) && F[i + o] > 0 && F[i - o] > 0) {
+          cut[i] = 1;
+          any = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!any) return;
+  const rest = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) rest[i] = F[i] > 0 && !cut[i] ? 1 : 0;
+  const parts = labelComponents(rest, W, H, true);
+  const cuts = labelComponents(cut, W, H, true);
+  const n = cuts.count;
+  const first = new Int32Array(n + 1);
+  const second = new Int32Array(n + 1);
+  const touchBg = new Uint8Array(n + 1);
+  for (let Y = 0; Y < H; Y++) {
+    for (let X = 0; X < W; X++) {
+      const i = Y * W + X;
+      const c = cuts.labels[i];
+      if (!c) continue;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = Y + dy;
+        if (yy < 0 || yy >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = X + dx;
+          if (xx < 0 || xx >= W) continue;
+          const j = yy * W + xx;
+          if (F[j] <= 0) {
+            if (dx === 0 || dy === 0) touchBg[c] = 1;
+            continue;
+          }
+          const l = parts.labels[j];
+          if (!l) continue;
+          if (!first[c]) first[c] = l;
+          else if (l !== first[c] && (!second[c] || parts.areas[l] > parts.areas[second[c]])) second[c] = l;
+        }
+      }
+    }
+  }
+  // 뺀 자리에 닿은 덩어리가 둘 이상이면(뺀 뒤 라벨이 다르면) 다른 경로로 이어지지 않은 것, 즉 떨어진 것이다.
+  // 바탕에 닿지 않은 자리는 덩어리 안쪽에 새 구멍을 낸다.
+  const keep = new Uint8Array(n + 1);
+  for (let c = 1; c <= n; c++) {
+    if (second[c] && Math.min(parts.areas[first[c]], parts.areas[second[c]]) >= minPart) keep[c] = 1;
+    else if (!touchBg[c]) keep[c] = 1;
+  }
+  for (let i = 0; i < W * H; i++) {
+    const c = cuts.labels[i];
+    if (c && keep[c]) F[i] = -1e-3;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 등고선
 
 interface Ring {
@@ -455,6 +613,10 @@ interface Piece {
   peak: number;
   thick: number;
   near: number;
+  /** 최고 농도가 나온 곳(1배 격자 번호). */
+  peakAt: number;
+  /** 살짝 흐린 1배 농도의 최고값. 넓고 옅은 자국에서 잡음 알갱이 하나가 최고값을 끌어올리지 않는다. */
+  peakS: number;
   edge: boolean;
   x0: number;
   y0: number;
@@ -501,7 +663,6 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   ) {
     return emptyResult(width, height);
   }
-  const T = tune();
   const maxSide = Math.max(64, Math.round(positive(options.maxSide) ?? DEFAULTS.maxSide));
   const ratio = Math.min(1, maxSide / Math.max(width, height));
   const pw = Math.max(1, Math.round(width * ratio));
@@ -526,7 +687,9 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   const img = downsample(image.data, width, height, pw, ph);
   const bg = estimateBackground(img);
   const { raw, smooth: d } = inkContrastMap(img, bg);
-  const noise = T.robustNoise > 0 ? backgroundNoise(d) : contrastNoise(d);
+  const noise = backgroundNoise(d);
+  const noiseBlock = Math.max(12, Math.round(Math.max(pw, ph) / 64));
+  const ln = localNoise(raw, pw, ph, noiseBlock);
   const high = Math.max(inkContrast, noise.median + 7 * noise.sigma);
   const low = Math.max(inkContrast * 0.55, noise.median + 3.5 * noise.sigma);
   lap("prep");
@@ -562,10 +725,8 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   const cand = new Uint8Array(n1);
   let anyCand = false;
   {
-    const lc = low * T.candLow;
-    const lr = T.candRaw > 0 ? low * T.candRaw : Infinity;
     for (let i = 0; i < n1; i++) {
-      if (!excl[i] && (d[i] >= lc || raw[i] >= lr)) {
+      if (!excl[i] && d[i] >= low) {
         cand[i] = 1;
         anyCand = true;
       }
@@ -573,7 +734,8 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   }
   if (!anyCand) return emptyResult(width, height, s);
 
-  // 굵기 추정(1배): 반값 경계 마스크의 진한 요소에서 2A/P
+  // 굵기 첫 추정(1배): 반값 경계 마스크의 진한 요소에서 2A/P. 테두리나 그림자처럼 큰 덩어리 하나가
+  // 중앙값을 끌고 가지 않도록 넓이의 제곱근으로 가중한다.
   let w0 = 3;
   {
     const peakR = Math.max(2, Math.round(Math.max(pw, ph) * 0.003));
@@ -599,7 +761,7 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     }
     const items: [number, number][] = [];
     for (let l = 1; l <= count; l++) {
-      if (strong[l] && areas[l] >= 20) items.push([(2 * areas[l]) / (edges[l] * (Math.PI / 4)), areas[l]]);
+      if (strong[l] && areas[l] >= 20) items.push([(2 * areas[l]) / (edges[l] * (Math.PI / 4)), Math.sqrt(areas[l])]);
     }
     const v = weightedMedian(items);
     if (v !== undefined) w0 = Math.max(1.2, Math.min(maxWidthP, v));
@@ -638,8 +800,8 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   lap("groups");
 
   // 창 크기(2배 격자)
-  const rMin = Math.max(1, Math.round(T.rw * w0 * 2));
-  const rMax = Math.max(1, Math.round(T.rm * w0 * 2));
+  const rMin = Math.max(1, Math.round(MIN_WINDOW * w0 * 2));
+  const rMax = Math.max(1, Math.round(MAX_WINDOW * w0 * 2));
   const sMin = Math.max(1, Math.round(rMin / 2));
   const sMax = Math.max(1, Math.round(rMax / 2));
   const pad = Math.ceil((Math.max(rMin, rMax) + Math.max(sMin, sMax)) / 2) + 4;
@@ -725,9 +887,10 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     const F = hi;
     for (let i = 0; i < n2; i++) {
       const h = hi[i];
-      const t = Math.min(0.5 * (h + Math.max(0, lo[i])), T.cap * h);
+      const t = Math.min(0.5 * (h + Math.max(0, lo[i])), THRESHOLD_CAP * h);
       F[i] = D2[i] - Math.max(low, t);
     }
+    cutValleys(F, D2, W2, H2, Math.max(1, Math.round(VALLEY_REACH * w0 * 2)), VALLEY_DEPTH, VALLEY_MIN_PART * w0 * w0 * 4);
     lap("field");
     const mask = new Uint8Array(n2);
     const q1 = new Int32Array(n2);
@@ -747,7 +910,7 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     const hist = new Float64Array((count + 1) * 4);
     for (let l = 1; l <= count; l++) {
       pieces.push({
-        area: 0, sumD: 0, peak: 0, thick: 0, near: Infinity, edge: false,
+        area: 0, sumD: 0, peak: 0, thick: 0, near: Infinity, peakAt: 0, peakS: 0, edge: false,
         x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, color: 0, perim: 0, parts: [],
       });
     }
@@ -761,7 +924,11 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
         const v = D2[i];
         pc.area += 0.25;
         pc.sumD += v;
-        if (v > pc.peak) pc.peak = v;
+        if (v > pc.peak) {
+          pc.peak = v;
+          pc.peakAt = q;
+        }
+        if (d[q] > pc.peakS) pc.peakS = d[q];
         if (dist2[i] > pc.thick) pc.thick = dist2[i];
         if (near && near[q] < pc.near) pc.near = near[q];
         const x = ox + X / 2;
@@ -874,20 +1041,27 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     for (const p of pieces) if (p.area >= minA && p.thick <= maxT && p.peak >= high) items.push([p.sumD / (4 * p.area), p.area]);
     med = weightedMedian(items) ?? high;
   }
+  const minPeak = Math.max(high, MIN_PEAK);
+  const noiseFloor = (p: Piece): number => {
+    const x = p.peakAt % pw;
+    const y = (p.peakAt / pw) | 0;
+    const b = Math.floor(y / noiseBlock) * ln.gw + Math.floor(x / noiseBlock);
+    return ln.level[b] + NOISE_K * ln.sigma[b];
+  };
   const why: Record<string, number> = {};
   const keep = pieces.filter((p) => {
     const a = p.area;
     const mD = p.sumD / (4 * a);
     let r = "";
     if (a < minA && !(a >= 0.4 * minA && p.peak >= 0.6 * med)) r = "small";
-    else if (p.peak < Math.max(high, 0.4 * med)) r = "faint";
+    else if (p.peak < Math.max(minPeak, 0.4 * med) || p.peakS < MIN_PEAK_SMOOTH) r = "faint";
+    else if (p.peak < noiseFloor(p)) r = "noise";
     else if (p.thick > maxT) r = "thick";
     else if ((mD < 0.35 * med && p.thick > 1.5 * w) || (mD < 0.25 * med && a > 2 * w * w)) r = "faintWide";
     else if (p.edge && p.color === 0 && mD < 0.6 * med) r = "edge";
     else if (p.near <= 4 * R && (p.color === 0 || mD < 0.35 * med || p.near <= reach + 3)) r = "nearBlob";
     why[r || "kept"] = (why[r || "kept"] ?? 0) + 1;
-    (p as Piece & { why?: string }).why = r;
-    return !r || T.keepAll > 0;
+    return !r;
   });
   lap("filter");
 
@@ -921,7 +1095,6 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
         strokeWidth: round2(Math.max(0.5, stadiumWidth(area, perim)) / s),
         order: Math.floor(p.y0 / 8) * 1e6 + p.x0,
         points,
-        ...(T.keepAll > 0 ? { why: (p as Piece & { why?: string }).why, peak: p.peak, mD: p.sumD / (4 * p.area), pa: p.area } : {}),
       });
     }
   }
@@ -932,16 +1105,16 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   for (const sh of shapes) {
     if (kept.length >= maxShapes || total + sh.points > maxPoints) {
       truncated = true;
-      continue;
+      break;
     }
     kept.push(sh);
     total += sh.points;
   }
   kept.sort((a, b) => a.order - b.order);
   lap("shapes");
+  // 측정 도구용: 전역에 __inkOutlineDebug 키를 미리 두면 단계별 시간과 거른 이유를 적는다.
   const dbg = globalThis as unknown as { __inkOutlineDebug?: unknown };
   if ("__inkOutlineDebug" in dbg) dbg.__inkOutlineDebug = { prof, why, w0, w, med, low, high, batches: batches.length, area2, n1, pieces: pieces.length };
-  if (T.keepAll > 0) (dbg as unknown as Record<string, unknown>).__inkOutlineMaps = { d, raw, cand, pw, ph, s, all: kept, low, high, med, w };
   return {
     width,
     height,
