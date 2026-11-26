@@ -8,7 +8,9 @@
  * 4. 그룹이 있는 곳만 Lanczos3로 2배 확대한 농도에 국소 문턱 t = max(low, min((국소최대 + 국소최소) / 2, 0.6 국소최대))을
  *    적용한다. 창 크기는 대표 획 굵기에서 정한다.
  * 5. 번져서 붙은 두 획 사이와 메워진 글자 속의 골짜기를 잘라 낸다(cutValleys).
- * 6. 0 등고선을 marching squares로 따서 고리(바깥 고리와 구멍)를 만들고, 색이 섞인 조각은 색 경계에서 나눈다.
+ * 6. 0 등고선을 marching squares로 따서 고리(바깥 고리와 구멍)를 만든다. 색은 픽셀마다 믿을 만한 색만 던진 표의
+ *    다수결이고, 두 색이 모두 크고 공간적으로 떨어진 조각만 색 경계에서 나눈다. 근거가 약한 조각은 같은 줄
+ *    가까운 이웃의 색을 따른다. 기본 색은 검정, 파랑, 빨강이다.
  * 7. 조각을 넓이, 최고 농도, 칸별 잡음, 굵기, 덩어리와의 거리로 걸러 지운 자국, 얼룩, 그림자, 잡음 알갱이를 뺀다.
  * 8. 고리를 Ramer-Douglas-Peucker로 줄이고 입력 픽셀 좌표로 돌려준다.
  *
@@ -48,6 +50,8 @@ export interface InkOutlineOptions {
   maxStrokeWidth?: number;
   /** 고리 단순화 허용 오차(입력 px). 기본은 획 굵기의 5%. */
   simplifyTolerance?: number;
+  /** 초록 글씨를 따로 구분한다. 기본은 검정, 파랑, 빨강 셋만 낸다. */
+  green?: boolean;
   /** 모양 수 상한. 넘으면 작은 것부터 버린다. */
   maxShapes?: number;
   /** 전체 꼭짓점 수 상한. 넘으면 작은 것부터 버린다. */
@@ -84,6 +88,45 @@ const MIN_PEAK = 0.18;
 const MIN_PEAK_SMOOTH = 0.15;
 /** 조각의 최고 농도가 칸별 바탕 수준 + 잡음의 이 배수보다 낮으면 잡음 알갱이로 본다. */
 const NOISE_K = 6;
+
+// 색 투표
+/** 투표하지 않은 픽셀. 색 번호 0..3(COLORS)과 겹치지 않는다. */
+const UNKNOWN = 4;
+/** 최대 흡광도가 이보다 작으면(투과율 약 0.86 위) 너무 옅어 색을 모른다. */
+const VOTE_MIN_ABSORB = 0.15;
+/** 흡광도 채도비가 이 이상이면 유채색 표를 던진다. 실제 사진의 파랑, 빨강 획은 중간 농도에서 0.2 위에 모인다. */
+const CHROMA_MIN = 0.2;
+/** 흡광도 채도비가 이보다 작아야 검정 표를 던진다. 검정 획은 0.12 안쪽이다. */
+const GRAY_MAX = 0.14;
+/** 이보다 어두운 채널이 있으면 포화로 보고 검정 표를 던지지 않는다. */
+const SATURATED = 0.05;
+/** 검정 표를 던지는 농도(1 - 평균 투과율) 범위. 흐린 파랑 가장자리와 포화된 중심을 뺀다. */
+const BLACK_VOTE_MIN = 0.15;
+const BLACK_VOTE_MAX = 0.92;
+/**
+ * 유채색 표 하나의 무게. 검정 잉크가 채도비 CHROMA_MIN을 넘게 찍히는 일은 드물지만, 파랑이 흐리거나 포화되어
+ * 무채색처럼 찍히는 일은 흔하다. 검정 표는 농도가 옅을수록 가볍다(0.4 이상에서 1).
+ */
+const CHROMA_WEIGHT = 3;
+/** 덩어리를 색으로 나누려면 두 색 표 무게가 각각 이 넓이(획 굵기 제곱 배수) 이상이어야 한다. */
+const SPLIT_VOTES = 3;
+/** 나눈 색 섬이 남으려면 넓이가 이 배수 이상이고, */
+const ISLAND_AREA = 4;
+/** 섬 안의 색 표 중 섬 색이 이 비율 이상이어야 한다. */
+const ISLAND_PURITY = 0.75;
+/** 우세색 표 수가 이 넓이(획 굵기 제곱 배수) 이상이고 표 무게가 전체의 STRONG_SHARE 이상이면 근거가 강하다. */
+const STRONG_VOTES = 1.5;
+const STRONG_SHARE = 0.7;
+/** 표가 거의 한 색뿐이면 이 넓이(획 굵기 제곱 배수)만 넘어도 근거가 강하다. */
+const PURE_VOTES = 0.5;
+const PURE_SHARE = 0.95;
+/** 작은 검정 덩어리가 강하려면 검정 표의 평균 무게가 이 이상이어야 한다(평균 농도 약 0.28 이상). */
+const PURE_BLACK_WEIGHT = 0.6;
+/** 근거가 약한 모양은 이 거리(획 굵기 배수) 안 이웃의 표 수를 함께 센다. 세로 간격은 NEIGHBOR_Y배로 친다. */
+const NEIGHBOR_REACH = 12;
+const NEIGHBOR_Y = 2.5;
+/** 이웃 표의 거리 가중이 절반이 되는 간격(획 굵기 배수). 같은 글자, 같은 단어의 획이 가장 크게 센다. */
+const NEIGHBOR_SCALE = 4;
 
 function emptyResult(width: unknown, height: unknown, scale = 1): InkOutlineResult {
   const safe = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -181,20 +224,36 @@ function localNoise(raw: Float32Array, pw: number, ph: number, block: number): {
   return { gw, gh, level, sigma };
 }
 
-function classifyColor(tr: number, tg: number, tb: number): number {
+/**
+ * 픽셀 하나(3x3 평균 투과율)의 색 투표. 색이 믿을 만할 때만 표를 던지고, 나머지는 UNKNOWN이다.
+ * - 흡광도(-log 투과율)의 채도비 s = (최대 - 최소) / 최대로 본다. 마커 색은 농도와 상관없이 s가 거의 일정하다.
+ * - 너무 옅은 픽셀은 색이 배경 잡음에 묻히므로 모른다.
+ * - 채널이 바닥(투과율 SATURATED 아래)에 붙은 진한 픽셀은 흡광도를 과소평가해 무채색처럼 보이므로 검정 표를
+ *   던지지 않는다. 덜 붙은 채널만으로도 색이 뚜렷하면 그 색 표는 던진다.
+ * - 검정 표는 확실히 무채색이면서 농도가 중간인 픽셀만 던진다.
+ * - s가 회색과 유채색 사이(GRAY_MAX..CHROMA_MIN)면 모른다. 흐린 파랑 가장자리가 여기 걸린다.
+ */
+function voteColor(tr: number, tg: number, tb: number, green: boolean): number {
   const ab = (t: number): number => -Math.log(Math.min(1, Math.max(0.02, t)));
   const ar = ab(tr);
   const ag = ab(tg);
   const a3 = ab(tb);
   const max = Math.max(ar, ag, a3);
+  if (max < VOTE_MIN_ABSORB) return UNKNOWN;
   const ch = max - Math.min(ar, ag, a3);
-  if (ch < 0.06 || ch / max < 0.2) return 0;
-  let h = max === ar ? 60 * (((ag - a3) / ch + 6) % 6) : max === ag ? 60 * ((a3 - ar) / ch + 2) : 60 * ((ar - ag) / ch + 4);
-  h = (h + 180) % 360;
-  if (h >= 300 || h < 40) return 1;
-  if (h >= 75 && h < 170) return 3;
-  if (h >= 170 && h < 285) return 2;
-  return 0;
+  const sRatio = ch / max;
+  if (sRatio >= CHROMA_MIN && ch >= 0.06) {
+    let h = max === ar ? 60 * (((ag - a3) / ch + 6) % 6) : max === ag ? 60 * ((a3 - ar) / ch + 2) : 60 * ((ar - ag) / ch + 4);
+    h = (h + 180) % 360;
+    if (h >= 300 || h < 40) return 1;
+    if (h >= 170 && h < 285) return 2;
+    if (h >= 75 && h < 170) return green ? 3 : h >= 130 ? 2 : UNKNOWN;
+    return UNKNOWN;
+  }
+  if (tr < SATURATED || tg < SATURATED || tb < SATURATED) return UNKNOWN;
+  const dark = 1 - (tr + tg + tb) / 3;
+  if (sRatio < GRAY_MAX && dark >= BLACK_VOTE_MIN && dark <= BLACK_VOTE_MAX) return 0;
+  return UNKNOWN;
 }
 
 /** 배경 격자를 처리 해상도 전체로 쌍선형 보간한다. */
@@ -625,7 +684,112 @@ interface Piece {
   color: number;
   perim: number;
   /** 색 단위로 묶은 고리. */
-  parts: { color: number; rings: { xy: number[]; area: number }[] }[];
+  parts: Part[];
+}
+
+interface Part {
+  color: number;
+  /** 색별 표 무게(1배 픽셀 넓이 × 표 무게). */
+  votes: number[];
+  /** 색별 표 수(1배 픽셀 넓이). */
+  counts: number[];
+  /** 색 경계에서 나눈 조각이면 true. 색 근거가 이미 강하다. */
+  split: boolean;
+  rings: { xy: number[]; area: number }[];
+}
+
+/**
+ * 색 근거가 약한 조각(표가 적거나 두 색 표가 비슷한 조각)은 같은 줄 가까운 이웃의 표를 넓이와 거리로 가중해
+ * 함께 센 다수색을 따른다. 근거가 강한 조각과 색 경계에서 나눈 조각은 그대로 둔다. 좌표는 처리 해상도다.
+ */
+function settleColors(parts: Part[], w: number, minHole: number): Record<string, number> {
+  const n = parts.length;
+  const box = new Float64Array(n * 4);
+  const strong = new Uint8Array(n);
+  const minVotes = STRONG_VOTES * w * w;
+  for (let k = 0; k < n; k++) {
+    const pt = parts[k];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of pt.rings) {
+      if (Math.abs(r.area) < minHole) continue;
+      for (let j = 0; j < r.xy.length; j += 2) {
+        const x = r.xy[j];
+        const y = r.xy[j + 1];
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    box.set([x0, y0, x1, y1], k * 4);
+    const v = pt.votes;
+    const total = v[0] + v[1] + v[2] + v[3];
+    const c = pt.color;
+    const nc = pt.counts[c];
+    // 작은 덩어리는 한 색뿐이어도, 옅은 무채색 점(지운 자국, 마른 파랑 마커)이면 근거로 치지 않는다.
+    const pure = nc >= PURE_VOTES * w * w && v[c] >= PURE_SHARE * total && (c !== 0 || v[0] >= PURE_BLACK_WEIGHT * nc);
+    if (pt.split || (nc >= minVotes && v[c] >= STRONG_SHARE * total) || pure) strong[k] = 1;
+  }
+  const reach = NEIGHBOR_REACH * w;
+  const cell = Math.max(8, reach);
+  const grid = new Map<number, number[]>();
+  for (let k = 0; k < n; k++) {
+    if (!Number.isFinite(box[k * 4])) continue;
+    const cx0 = Math.floor(box[k * 4] / cell);
+    const cy0 = Math.floor(box[k * 4 + 1] / cell);
+    const cx1 = Math.floor(box[k * 4 + 2] / cell);
+    const cy1 = Math.floor(box[k * 4 + 3] / cell);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const key = cy * 65536 + cx;
+        const list = grid.get(key);
+        if (list) list.push(k);
+        else grid.set(key, [k]);
+      }
+    }
+  }
+  const stats: Record<string, number> = { parts: n, strong: 0, weak: 0, changed: 0 };
+  const next = parts.map((pt) => pt.color);
+  const score = [0, 0, 0, 0];
+  const seen = new Int32Array(n).fill(-1);
+  for (let k = 0; k < n; k++) {
+    if (strong[k]) {
+      stats.strong++;
+      continue;
+    }
+    stats.weak++;
+    if (!Number.isFinite(box[k * 4])) continue;
+    const [x0, y0, x1, y1] = [box[k * 4], box[k * 4 + 1], box[k * 4 + 2], box[k * 4 + 3]];
+    for (let c = 0; c < 4; c++) score[c] = parts[k].counts[c];
+    seen[k] = k;
+    const cx0 = Math.floor((x0 - reach) / cell);
+    const cy0 = Math.floor((y0 - reach / NEIGHBOR_Y) / cell);
+    const cx1 = Math.floor((x1 + reach) / cell);
+    const cy1 = Math.floor((y1 + reach / NEIGHBOR_Y) / cell);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const list = grid.get(cy * 65536 + cx);
+        if (!list) continue;
+        for (const j of list) {
+          if (seen[j] === k) continue;
+          seen[j] = k;
+          const gx = Math.max(0, box[j * 4] - x1, x0 - box[j * 4 + 2]);
+          const gy = Math.max(0, box[j * 4 + 1] - y1, y0 - box[j * 4 + 3]);
+          const dd = Math.hypot(gx, NEIGHBOR_Y * gy);
+          if (dd > reach) continue;
+          const g = 1 / (1 + (dd / (NEIGHBOR_SCALE * w)) ** 2);
+          const v = parts[j].counts;
+          for (let c = 0; c < 4; c++) score[c] += g * v[c];
+        }
+      }
+    }
+    let m = parts[k].color;
+    for (let c = 0; c < 4; c++) if (score[c] > score[m] + 1e-9) m = c;
+    if (m !== parts[k].color) stats.changed++;
+    next[k] = m;
+  }
+  for (let k = 0; k < n; k++) parts[k].color = next[k];
+  return stats;
 }
 
 function weightedMedian(items: [number, number][]): number | undefined {
@@ -675,6 +839,7 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   const maxShapes = Math.floor(positive(options.maxShapes) ?? DEFAULTS.maxShapes);
   const maxPoints = Math.floor(positive(options.maxPoints) ?? DEFAULTS.maxPoints);
   const inkContrast = Math.min(0.9, positive(options.inkContrast) ?? DEFAULTS.inkContrast);
+  const green = options.green === true;
   const n1 = pw * ph;
   const prof: Record<string, number> = {};
   let t0 = performance.now();
@@ -840,30 +1005,52 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     }
   }
 
-  // 색 지도(1배): 농도 가중 국소 평균 투과율
-  const cmap = new Uint8Array(n1);
+  // 색 표(1배): 3x3 평균 투과율로 픽셀마다 믿을 만한 색만 표를 던진다. 국소 색 지도 lcol은 반경 w0 안에서
+  // 가장 많이 나온 표다(표가 하나도 없으면 UNKNOWN). 덩어리를 색 경계에서 나눌 때만 쓴다.
+  const vote = new Uint8Array(n1).fill(UNKNOWN);
+  const lcol = new Uint8Array(n1).fill(UNKNOWN);
+  const voteW = new Float32Array(n1);
   {
     const br = backgroundMap(bg.r, bg, pw, ph);
     const bgG = backgroundMap(bg.g, bg, pw, ph);
     const bb = backgroundMap(bg.b, bg, pw, ph);
-    const ww = new Float32Array(n1);
     const cr = new Float32Array(n1);
     const cg = new Float32Array(n1);
     const cb = new Float32Array(n1);
     for (let i = 0; i < n1; i++) {
-      const v = Math.max(0, d[i] - 0.5 * low);
-      const w = v * v + 1e-6;
-      ww[i] = w;
-      cr[i] = (w * img.rgb[i * 3]) / Math.max(8, br[i]);
-      cg[i] = (w * img.rgb[i * 3 + 1]) / Math.max(8, bgG[i]);
-      cb[i] = (w * img.rgb[i * 3 + 2]) / Math.max(8, bb[i]);
+      cr[i] = img.rgb[i * 3] / Math.max(8, br[i]);
+      cg[i] = img.rgb[i * 3 + 1] / Math.max(8, bgG[i]);
+      cb[i] = img.rgb[i * 3 + 2] / Math.max(8, bb[i]);
     }
-    const r = Math.max(1, Math.round(w0 * 0.7));
-    boxBlur(ww, pw, ph, r);
-    boxBlur(cr, pw, ph, r);
-    boxBlur(cg, pw, ph, r);
-    boxBlur(cb, pw, ph, r);
-    for (let i = 0; i < n1; i++) if (grown[i]) cmap[i] = classifyColor(cr[i] / ww[i], cg[i] / ww[i], cb[i] / ww[i]);
+    boxBlur(cr, pw, ph, 1);
+    boxBlur(cg, pw, ph, 1);
+    boxBlur(cb, pw, ph, 1);
+    for (let i = 0; i < n1; i++) {
+      if (!grown[i]) continue;
+      const v = voteColor(cr[i], cg[i], cb[i], green);
+      vote[i] = v;
+      voteW[i] = v === UNKNOWN ? 0 : v === 0 ? Math.min(1, (1 - (cr[i] + cg[i] + cb[i]) / 3 - 0.1) / 0.3) : CHROMA_WEIGHT;
+    }
+    const r = Math.max(1, Math.round(w0));
+    const best = cr;
+    best.fill(0);
+    const acc = cg;
+    for (let c = 0; c < (green ? 4 : 3); c++) {
+      let any = false;
+      for (let i = 0; i < n1; i++) {
+        const v = vote[i] === c ? voteW[i] : 0;
+        acc[i] = v;
+        if (v) any = true;
+      }
+      if (!any) continue;
+      boxBlur(acc, pw, ph, r);
+      for (let i = 0; i < n1; i++) {
+        if (grown[i] && acc[i] > best[i] + 1e-6) {
+          best[i] = acc[i];
+          lcol[i] = c;
+        }
+      }
+    }
   }
   lap("color");
 
@@ -907,7 +1094,8 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     if (count === 0) continue;
     const dist2 = inkDistance2(mask, W2, H2);
     const base = pieces.length;
-    const hist = new Float64Array((count + 1) * 4);
+    const hist = new Float64Array((count + 1) * 5);
+    const nvote = new Float64Array((count + 1) * 4);
     for (let l = 1; l <= count; l++) {
       pieces.push({
         area: 0, sumD: 0, peak: 0, thick: 0, near: Infinity, peakAt: 0, peakS: 0, edge: false,
@@ -938,28 +1126,76 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
         if (y < pc.y0) pc.y0 = y;
         if (x > pc.x1) pc.x1 = x;
         if (y > pc.y1) pc.y1 = y;
-        hist[l * 4 + cmap[q]]++;
+        hist[l * 5 + vote[q]] += voteW[q];
+        if (vote[q] !== UNKNOWN) nvote[l * 4 + vote[q]]++;
       }
     }
     lap("label");
-    // 색: 다수결. 다른 색이 충분히 섞인 조각은 색 경계에서 나눈다.
+    // 색: 믿을 만한 표의 다수결. 덩어리 하나는 원칙적으로 한 색이다. 두 색 표가 모두 크고, 국소 색 지도에서
+    // 각 색이 넓고 순수한 섬으로 떨어져 있을 때만 색 경계에서 나눈다.
+    const minSplit = SPLIT_VOTES * w0 * w0 * 4;
     const mixed = new Uint8Array(count + 1);
     let anyMixed = false;
     for (let l = 1; l <= count; l++) {
       const pc = pieces[base + l - 1];
       pc.thick = Math.sqrt(pc.thick);
       let m = 0;
-      let sum = 0;
-      for (let c = 0; c < 4; c++) {
-        sum += hist[l * 4 + c];
-        if (hist[l * 4 + c] > hist[l * 4 + m]) m = c;
-      }
+      for (let c = 1; c < 4; c++) if (hist[l * 5 + c] > hist[l * 5 + m]) m = c;
       pc.color = m;
-      const rest = sum - hist[l * 4 + m];
-      if (rest > 0.06 * sum && rest / 4 > 3 * w0 * w0) {
+      let second = 0;
+      for (let c = 0; c < 4; c++) if (c !== m && hist[l * 5 + c] > second) second = hist[l * 5 + c];
+      if (second >= minSplit && hist[l * 5 + m] >= minSplit) {
         mixed[l] = 1;
         anyMixed = true;
       }
+    }
+    // 섞인 조각의 픽셀 색(색 번호 + 1). 국소 색 지도가 모르는 곳은 조각의 다수색이다.
+    let pcol: Uint8Array | null = null;
+    if (anyMixed) {
+      pcol = new Uint8Array(n2);
+      for (let i = 0; i < n2; i++) {
+        const l = lab[i];
+        if (!l || !mixed[l]) continue;
+        const c = lcol[q1[i]];
+        pcol[i] = (c === UNKNOWN ? pieces[base + l - 1].color : c) + 1;
+      }
+      // 작거나 다른 색 표가 많이 섞인 섬은 조각의 다수색으로 돌린다.
+      const minIsland = ISLAND_AREA * w0 * w0 * 4;
+      for (let c = 1; c <= 4; c++) {
+        const m = new Uint8Array(n2);
+        let any = false;
+        for (let i = 0; i < n2; i++) if (pcol[i] === c) { m[i] = 1; any = true; }
+        if (!any) continue;
+        const sub = labelComponents(m, W2, H2, true);
+        const own = new Float64Array(sub.count + 1);
+        const all = new Float64Array(sub.count + 1);
+        for (let i = 0; i < n2; i++) {
+          const k = sub.labels[i];
+          if (!k) continue;
+          const v = vote[q1[i]];
+          if (v === UNKNOWN) continue;
+          all[k] += voteW[q1[i]];
+          if (v === c - 1) own[k] += voteW[q1[i]];
+        }
+        for (let i = 0; i < n2; i++) {
+          const k = sub.labels[i];
+          if (!k) continue;
+          const major = pieces[base + lab[i] - 1].color + 1;
+          if (major === c) continue;
+          if (sub.areas[k] < minIsland || own[k] < minSplit || own[k] < ISLAND_PURITY * all[k]) pcol[i] = major;
+        }
+      }
+      // 섬을 돌린 뒤에도 두 색 이상이 남은 조각만 나눈다.
+      const seen = new Uint8Array((count + 1) * 4);
+      for (let i = 0; i < n2; i++) if (pcol[i]) seen[lab[i] * 4 + pcol[i] - 1] = 1;
+      for (let l = 1; l <= count; l++) {
+        if (!mixed[l]) continue;
+        let k = 0;
+        for (let c = 0; c < 4; c++) k += seen[l * 4 + c];
+        if (k < 2) mixed[l] = 0;
+      }
+      anyMixed = false;
+      for (let l = 1; l <= count; l++) if (mixed[l]) anyMixed = true;
     }
     for (let i = 0; i < n2; i++) {
       const l = lab[i];
@@ -967,8 +1203,10 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
         if (F[i] >= 0) F[i] = -1e-4;
       } else if (F[i] <= 0) F[i] = 1e-4;
     }
-    const addRings = (rings: Ring[], colorOf: (comp: number) => number, pieceOf: (comp: number) => number): void => {
-      const partOf = new Map<number, { color: number; rings: { xy: number[]; area: number }[] }>();
+    const votesOfPiece = (l: number): number[] => [0, 1, 2, 3].map((c) => hist[l * 5 + c] / 4);
+    const countsOfPiece = (l: number): number[] => [0, 1, 2, 3].map((c) => nvote[l * 4 + c] / 4);
+    const addRings = (rings: Ring[], colorOf: (comp: number) => number, pieceOf: (comp: number) => number, votesOf: (comp: number) => number[], countsOf: (comp: number) => number[], split: boolean): void => {
+      const partOf = new Map<number, Part>();
       for (const r of rings) {
         if (!r.comp) continue;
         const pi = pieceOf(r.comp);
@@ -980,7 +1218,7 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
         const area = r.area / 4;
         let part = partOf.get(r.comp);
         if (!part) {
-          part = { color: colorOf(r.comp), rings: [] };
+          part = { color: colorOf(r.comp), votes: votesOf(r.comp), counts: countsOf(r.comp), split, rings: [] };
           partOf.set(r.comp, part);
           pc.parts.push(part);
         }
@@ -991,34 +1229,30 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     {
       const Fa = anyMixed ? new Float32Array(n2) : F;
       if (anyMixed) for (let i = 0; i < n2; i++) Fa[i] = lab[i] && mixed[lab[i]] ? -Math.abs(F[i]) : F[i];
-      addRings(contours(Fa, W2, H2, lab), (l) => pieces[base + l - 1].color, (l) => l);
+      addRings(contours(Fa, W2, H2, lab), (l) => pieces[base + l - 1].color, (l) => l, votesOfPiece, countsOfPiece, false);
     }
-    if (anyMixed) {
-      const pcol = new Uint8Array(n2);
-      for (let i = 0; i < n2; i++) if (lab[i] && mixed[lab[i]]) pcol[i] = cmap[q1[i]] + 1;
-      // 작은 색 섬은 조각의 다수색으로 돌린다.
+    if (anyMixed && pcol) {
       for (let c = 1; c <= 4; c++) {
         const m = new Uint8Array(n2);
         let any = false;
-        for (let i = 0; i < n2; i++) if (pcol[i] === c) { m[i] = 1; any = true; }
-        if (!any) continue;
-        const sub = labelComponents(m, W2, H2, true);
-        for (let i = 0; i < n2; i++) {
-          const k = sub.labels[i];
-          if (k && sub.areas[k] / 4 < 3 * w0 * w0) pcol[i] = pieces[base + lab[i] - 1].color + 1;
-        }
-      }
-      for (let c = 1; c <= 4; c++) {
-        const m = new Uint8Array(n2);
-        let any = false;
-        for (let i = 0; i < n2; i++) if (pcol[i] === c) { m[i] = 1; any = true; }
+        for (let i = 0; i < n2; i++) if (pcol[i] === c && mixed[lab[i]]) { m[i] = 1; any = true; }
         if (!any) continue;
         const sub = labelComponents(m, W2, H2, true);
         const Fc = new Float32Array(n2);
-        for (let i = 0; i < n2; i++) Fc[i] = pcol[i] === c ? F[i] : -Math.abs(F[i]);
+        for (let i = 0; i < n2; i++) Fc[i] = m[i] ? F[i] : -Math.abs(F[i]);
         const firstPix = new Int32Array(sub.count + 1).fill(-1);
-        for (let i = 0; i < n2; i++) if (sub.labels[i] && firstPix[sub.labels[i]] < 0) firstPix[sub.labels[i]] = i;
-        addRings(contours(Fc, W2, H2, sub.labels), () => c - 1, (k) => lab[firstPix[k]]);
+        const sv = new Float64Array((sub.count + 1) * 4);
+        const sn = new Float64Array((sub.count + 1) * 4);
+        for (let i = 0; i < n2; i++) {
+          const k = sub.labels[i];
+          if (!k) continue;
+          if (firstPix[k] < 0) firstPix[k] = i;
+          const v = vote[q1[i]];
+          if (v === UNKNOWN) continue;
+          sv[k * 4 + v] += 0.25 * voteW[q1[i]];
+          sn[k * 4 + v] += 0.25;
+        }
+        addRings(contours(Fc, W2, H2, sub.labels), () => c - 1, (k) => lab[firstPix[k]], (k) => [0, 1, 2, 3].map((v) => sv[k * 4 + v]), (k) => [0, 1, 2, 3].map((v) => sn[k * 4 + v]), true);
       }
     }
     lap("contour");
@@ -1064,6 +1298,9 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
     return !r;
   });
   lap("filter");
+
+  const colorStats = settleColors(keep.flatMap((p) => p.parts), w, minHole);
+  lap("settle");
 
   // 모양 만들기
   const tol = positive(options.simplifyTolerance) !== undefined ? (options.simplifyTolerance as number) * s : Math.max(0.1, 0.05 * w);
@@ -1114,7 +1351,7 @@ export function extractInkOutlines(image: InkImageInput, options: InkOutlineOpti
   lap("shapes");
   // 측정 도구용: 전역에 __inkOutlineDebug 키를 미리 두면 단계별 시간과 거른 이유를 적는다.
   const dbg = globalThis as unknown as { __inkOutlineDebug?: unknown };
-  if ("__inkOutlineDebug" in dbg) dbg.__inkOutlineDebug = { prof, why, w0, w, med, low, high, batches: batches.length, area2, n1, pieces: pieces.length };
+  if ("__inkOutlineDebug" in dbg) dbg.__inkOutlineDebug = { prof, why, colorStats, w0, w, med, low, high, batches: batches.length, area2, n1, pieces: pieces.length };
   return {
     width,
     height,

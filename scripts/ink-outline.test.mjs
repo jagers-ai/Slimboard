@@ -177,18 +177,103 @@ test('짧은 획과 점을 버리지 않는다', () => {
   assert.equal(result.shapes.length, 5);
 });
 
-test('마커 색을 구분한다', () => {
+test('마커 색을 구분하고 기본 출력은 검정, 파랑, 빨강 셋이다', () => {
   const board = new Board(1000, 700);
   const colors = ['black', 'blue', 'red', 'green'];
   colors.forEach((c, k) => {
     board.line(150, 120 + k * 140, 850, 120 + k * 140, 6, c);
     board.ring(500, 180 + k * 140, 20, 5, c);
   });
-  const result = extractInkOutlines(board.image());
-  colors.forEach((c, k) => {
+  const image = board.image();
+  const result = extractInkOutlines(image);
+  colors.slice(0, 3).forEach((c, k) => {
     assert.equal(shapeAt(result, 200, 120 + k * 140)?.color, c, c);
     assert.equal(shapeAt(result, 480, 180 + k * 140)?.color, c, `${c} 원`);
   });
+  assert.ok(shapeAt(result, 200, 120 + 3 * 140), '초록 획도 모양은 남는다');
+  assert.equal(result.shapes.some((s) => s.color === 'green'), false, '기본 출력에 초록이 없다');
+
+  const withGreen = extractInkOutlines(image, { green: true });
+  colors.forEach((c, k) => {
+    assert.equal(shapeAt(withGreen, 200, 120 + k * 140)?.color, c, `green 옵션 ${c}`);
+    assert.equal(shapeAt(withGreen, 480, 180 + k * 140)?.color, c, `green 옵션 ${c} 원`);
+  });
+});
+
+// 짧은 획 몇 개로 글자 하나를 흉내 낸다. (x, y)는 글자 왼쪽 위, h는 글자 높이.
+function glyph(board, x, y, h, width, color, k) {
+  const v = (k * 7) % 5;
+  board.line(x, y + h * 0.1, x + h * 0.15, y + h * 0.9, width, color);
+  board.line(x + h * 0.15, y + h * (0.3 + v * 0.05), x + h * 0.6, y + h * 0.35, width, color);
+  board.ring(x + h * 0.45, y + h * 0.7, h * 0.18, width, color);
+  return board;
+}
+
+test('아주 진한 파랑 마커는 중심이 포화되어도 파랑이다', () => {
+  // 빨강, 초록 채널은 바닥에 붙고 파랑 채널만 조금 남는다.
+  const deep = [0.004, 0.01, 0.12];
+  const board = new Board(900, 600)
+    .line(100, 150, 800, 150, 8, deep)
+    .ring(250, 380, 40, 7, deep)
+    .line(450, 300, 600, 480, 7, deep);
+  for (let k = 0; k < 6; k++) glyph(board, 650 + (k % 3) * 60, 300 + Math.floor(k / 3) * 90, 50, 5, deep, k);
+  const result = extractInkOutlines(board.image());
+  assert.ok(result.shapes.length > 0);
+  for (const s of result.shapes) assert.equal(s.color, 'blue', `모양 ${bbox(s).map(Math.round)}`);
+});
+
+test('가늘고 흐린 파랑 글씨는 파랑이다', () => {
+  const faint = [0.62, 0.66, 0.78];
+  const board = new Board(900, 600);
+  for (let k = 0; k < 12; k++) glyph(board, 80 + k * 62, 120, 40, 2.6, faint, k);
+  for (let k = 0; k < 12; k++) glyph(board, 80 + k * 62, 320, 30, 2.2, faint, k + 3);
+  const result = extractInkOutlines(board.image());
+  assert.ok(result.shapes.length >= 20, `모양 수 ${result.shapes.length}`);
+  for (const s of result.shapes) assert.equal(s.color, 'blue', `모양 ${bbox(s).map(Math.round)}`);
+});
+
+test('한 획 안에서 마커가 말라 회색처럼 찍힌 구간이 있어도 색이 중간에 바뀌지 않는다', () => {
+  const dry = [0.5, 0.52, 0.56];
+  const board = new Board(900, 600)
+    .line(100, 200, 380, 200, 6, 'blue')
+    .line(380, 200, 520, 200, 6, dry)
+    .line(520, 200, 800, 200, 6, 'blue')
+    .line(100, 420, 800, 420, 6, [0.02, 0.04, 0.2]);
+  const result = extractInkOutlines(board.image());
+  for (const x of [150, 300, 450, 600, 750]) assert.equal(shapeAt(result, x, 200)?.color, 'blue', `윗줄 ${x}`);
+  for (const x of [150, 450, 750]) assert.equal(shapeAt(result, x, 420)?.color, 'blue', `아랫줄 ${x}`);
+  assert.equal(result.shapes.filter((s) => s.color === 'black').length, 0);
+});
+
+test('파랑 단어 옆 검정 단어는 각자 제 색을 지킨다', () => {
+  const board = new Board(1000, 600);
+  for (let k = 0; k < 5; k++) glyph(board, 80 + k * 55, 200, 45, 4, 'blue', k);
+  for (let k = 0; k < 5; k++) glyph(board, 400 + k * 55, 200, 45, 4, 'black', k + 1);
+  for (let k = 0; k < 4; k++) glyph(board, 720 + k * 55, 200, 45, 4, 'blue', k + 2);
+  for (let k = 0; k < 6; k++) glyph(board, 80 + k * 55, 400, 45, 4, 'black', k);
+  for (let k = 0; k < 6; k++) glyph(board, 450 + k * 55, 400, 45, 4, 'blue', k + 4);
+  const result = extractInkOutlines(board.image());
+  for (const s of result.shapes) {
+    const [x0, y0] = bbox(s);
+    const want = y0 < 300 ? (x0 >= 390 && x0 < 690 ? 'black' : 'blue') : x0 < 430 ? 'black' : 'blue';
+    assert.equal(s.color, want, `모양 ${bbox(s).map(Math.round)}`);
+  }
+});
+
+test('검정 글자 위를 지나는 빨간 동그라미는 색 경계에서 나뉜다', () => {
+  const board = new Board(900, 600)
+    .ring(400, 300, 30, 5, 'black')
+    .line(385, 290, 415, 290, 4, 'black')
+    .line(415, 290, 385, 315, 4, 'black')
+    .ring(445, 300, 60, 5, 'red');
+  const result = extractInkOutlines(board.image());
+  assert.equal(shapeAt(result, 370, 300)?.color, 'black', '검정 원 왼쪽');
+  assert.equal(shapeAt(result, 415, 274)?.color, 'black', '검정 원 오른쪽 위');
+  assert.equal(shapeAt(result, 430, 300)?.color, 'black', '검정 원 오른쪽');
+  assert.equal(shapeAt(result, 400, 290)?.color, 'black', '검정 글자 속');
+  assert.equal(shapeAt(result, 505, 300)?.color, 'red', '빨간 원 오른쪽');
+  assert.equal(shapeAt(result, 445, 240)?.color, 'red', '빨간 원 위');
+  assert.equal(shapeAt(result, 445, 360)?.color, 'red', '빨간 원 아래');
 });
 
 test('옅지만 또렷한 글씨는 남기고 지운 자국처럼 아주 옅은 흔적은 버린다', () => {
