@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ChevronLeft, FileText, Image as ImageIcon, LoaderCircle } from "lucide-react";
 
 import Link from "@/components/AppLink";
 import { AppFrame } from "@/components/AppFrame";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
-import { GoodnotesExportError, prepareGoodnotesFile, type GoodnotesFailure, type GoodnotesFile } from "@/lib/goodnotes-export";
+import {
+  GOODNOTES_DEFAULT_PEN, GOODNOTES_PENS, GoodnotesExportError, changeGoodnotesPen, isGoodnotesPen, prepareGoodnotesFile,
+  type GoodnotesFailure, type GoodnotesFile, type GoodnotesPen,
+} from "@/lib/goodnotes-export";
 
 type Stage =
   | { name: "preparing" | "empty" | "unfinished" | GoodnotesFailure }
@@ -21,6 +24,28 @@ const messages: Record<Exclude<Stage["name"], "ready">, string> = {
   ink: "글씨를 옮기지 못했어요.",
 };
 
+const penNames: Record<GoodnotesPen, string> = { fountain: "만년필", brush: "붓" };
+// A per-device convenience: without storage the screen starts with the default pen.
+const penStorageKey = "slimboard.goodnotes-pen";
+
+function readStoredPen(): GoodnotesPen {
+  try {
+    const stored = window.localStorage.getItem(penStorageKey);
+    if (isGoodnotesPen(stored)) return stored;
+  } catch (error) {
+    console.warn("Goodnotes pen choice unavailable", error);
+  }
+  return GOODNOTES_DEFAULT_PEN;
+}
+
+function storePen(pen: GoodnotesPen) {
+  try {
+    window.localStorage.setItem(penStorageKey, pen);
+  } catch (error) {
+    console.warn("Goodnotes pen choice not remembered", error);
+  }
+}
+
 /** Prepares the handwriting as soon as it opens, so one tap can open the share sheet. */
 export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   noteId: string; title: string; photoUrl: string | null; completed: boolean;
@@ -28,12 +53,19 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [progress, setProgress] = useState<Stage>({ name: "preparing" });
+  // The pen tapped on this screen; until then the file keeps the pen it was prepared with.
+  const [chosenPen, setChosenPen] = useState<GoodnotesPen | null>(null);
   const stage: Stage = !photoUrl ? { name: "photo-missing" } : !completed ? { name: "unfinished" } : progress;
+  const prepared = stage.name === "ready" ? stage.prepared : null;
+  const pen = chosenPen ?? prepared?.pen ?? GOODNOTES_DEFAULT_PEN;
+  // Rewriting the file for another pen: the action waits for the new file.
+  const rewriting = prepared !== null && prepared.pen !== pen;
 
   useEffect(() => {
     if (!photoUrl || !completed) return;
     const abort = new AbortController();
-    prepareGoodnotesFile({ photoUrl, title, signal: abort.signal }).then(prepared => {
+    // The last pen chosen on this device (also on this screen, since a choice is stored before it applies).
+    prepareGoodnotesFile({ photoUrl, title, signal: abort.signal, pen: readStoredPen() }).then(prepared => {
       if (!abort.signal.aborted) setProgress(prepared ? { name: "ready", prepared, shareable: canShare(prepared.file) } : { name: "empty" });
     }, error => {
       if (abort.signal.aborted) return;
@@ -43,14 +75,33 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
     return () => abort.abort();
   }, [attempt, completed, photoUrl, title]);
 
+  // Only the latest choice may replace the file: a newer choice or a new preparation drops an older rewrite.
+  useEffect(() => {
+    if (!prepared || prepared.pen === pen) return;
+    let current = true;
+    changeGoodnotesPen(prepared, pen).then(next => {
+      if (current) setProgress({ name: "ready", prepared: next, shareable: canShare(next.file) });
+    }, error => {
+      if (!current) return;
+      console.error("Goodnotes pen change failed", error, error instanceof Error ? error.cause : undefined);
+      setProgress({ name: error instanceof GoodnotesExportError ? error.failure : "ink" });
+    });
+    return () => { current = false; };
+  }, [pen, prepared]);
+
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
     headingRef.current?.closest(".app-scroll")?.scrollTo({ top: 0 });
   }, [stage.name]);
 
   const share = useShare();
-  const saveUrl = useObjectUrl(stage.name === "ready" && !stage.shareable ? stage.prepared.file : null);
+  const saveUrl = useObjectUrl(stage.name === "ready" && !stage.shareable && !rewriting ? stage.prepared.file : null);
   const noteUrl = `/notes/${noteId}`;
+
+  function choosePen(next: GoodnotesPen) {
+    storePen(next);
+    setChosenPen(next);
+  }
 
   function retry() {
     setProgress({ name: "preparing" });
@@ -58,7 +109,7 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
   }
 
   let action;
-  if (stage.name === "preparing") {
+  if (stage.name === "preparing" || rewriting) {
     action = <button className="button primary full-width" type="button" disabled>준비 중</button>;
   } else if (stage.name === "photo" || stage.name === "ink") {
     action = <button className="button primary full-width" type="button" onClick={retry}>다시 시도</button>;
@@ -84,7 +135,10 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
       <span aria-hidden="true" />
     </header>
     <section className={stage.name === "ready" ? "goodnotes-export" : "capture-placeholder goodnotes-state"} aria-busy={stage.name === "preparing"}>
-      {stage.name === "ready" ? <InkPaper preview={stage.prepared.preview} />
+      {stage.name === "ready" ? <>
+        <InkPaper preview={stage.prepared.preview} />
+        <PenChoice pen={pen} onChange={choosePen} />
+      </>
         : stage.name === "preparing" ? <LoaderCircle size={40} className="spinner" aria-hidden="true" />
         : stage.name === "photo" || stage.name === "photo-missing" ? <ImageIcon size={40} aria-hidden="true" />
         : <FileText size={40} aria-hidden="true" />}
@@ -95,6 +149,18 @@ export function GoodnotesExport({ noteId, title, photoUrl, completed }: {
       </p>
     </section>
   </AppFrame>;
+}
+
+function PenChoice({ pen, onChange }: { pen: GoodnotesPen; onChange: (pen: GoodnotesPen) => void }) {
+  const id = useId();
+  return <fieldset className="choice-group">
+    <legend className="sr-only">펜</legend>
+    {GOODNOTES_PENS.map(option => <span className="choice-option" key={option}>
+      <input className="choice-input" type="radio" id={`${id}-${option}`} name={`${id}-pen`} value={option}
+        checked={pen === option} onChange={() => onChange(option)} />
+      <label htmlFor={`${id}-${option}`}>{penNames[option]}</label>
+    </span>)}
+  </fieldset>;
 }
 
 function InkPaper({ preview }: { preview: GoodnotesFile["preview"] }) {

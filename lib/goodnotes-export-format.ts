@@ -59,13 +59,22 @@ export const GOODNOTES_EXPORT_MAX_PEN_PT = 6;
 
 /**
  * 1쪽 펜 종류.
- * - "ballpoint": 글씨 윤곽을 균일 굵기 볼펜 획 여러 줄로 채운다(시험 파일 D2 방식).
+ * - "ballpoint": 글씨 윤곽을 균일 굵기 볼펜 획 여러 줄로 채운다(시험 파일 D2 방식). 보내기 화면에서는 고르지 않고
+ *   outlineToInk의 인자로만 쓴다.
  * - "fountain", "brush": 글씨 가운데 선에 점마다 굵기를 준 만년필(f3 1), 붓(f3 4) 획 하나로 옮긴다.
  *   실제 판서 재구성 IoU 0.918(볼펜 0.898)이고 획 수가 적어 지우개, 올가미가 글자 단위로 먹는다.
+ *   둘은 획 기하(점과 지름)가 같고 파일에 적는 펜 종류만 다르다(withExportPen).
+ * 보내기 화면에서 고르는 펜은 GOODNOTES_EXPORT_PEN_CHOICES이고, 처음 값은 GOODNOTES_EXPORT_PEN이다.
  * 기본값은 "fountain"(2026-11-27 사용자가 볼펜, 만년필, 붓 실제 판서 시험 파일을 받아 보고 만년필로 정함).
- * 볼펜 채움보다 사진의 굵기 변화와 작은 글씨 모양이 가깝다. 바꾸려면 이 한 줄만 고친다(Worker와 미리보기는 이 값을 따른다).
+ * 볼펜 채움보다 사진의 굵기 변화와 작은 글씨 모양이 가깝다.
  */
-export const GOODNOTES_EXPORT_PEN: ExportPen = "fountain";
+export const GOODNOTES_EXPORT_PEN: ExportVariablePen = "fountain";
+
+/**
+ * 보내기 화면의 펜 선택지(2026-11-27 사용자 요청: 공개 사이트에서 만년필과 붓을 둘 다 쓰게).
+ * 획 기하가 같은 펜만 둔다. 그래서 고르기를 바꿀 때 사진을 다시 읽지 않고 withExportPen으로 파일만 다시 쓴다.
+ */
+export const GOODNOTES_EXPORT_PEN_CHOICES: ReadonlyArray<ExportVariablePen> = ["fountain", "brush"];
 
 export const GOODNOTES_EXPORT_TYPE = "application/zip";
 export const GOODNOTES_EXPORT_EXTENSION = ".goodnotes";
@@ -76,12 +85,14 @@ export const GOODNOTES_EXPORT_UNTITLED = "슬림보드 노트";
  * width, height는 윤곽 좌표의 기준인 사진(분석 입력) 크기다.
  */
 export type ExportOutline = { width: number; height: number; shapes: ReadonlyArray<FillShape<InkPdfColor>> };
-export type ExportPen = "ballpoint" | "fountain" | "brush";
+export type ExportPen = "ballpoint" | ExportVariablePen;
+/** 점마다 굵기가 바뀌는 펜. 획 기하는 같고 파일의 펜 종류만 다르다. */
+export type ExportVariablePen = "fountain" | "brush";
 /** 1쪽에 그대로 들어가는 볼펜 획. 좌표와 굵기는 페이지 단위다. pen을 생략하면 볼펜이다. */
 export type ExportBallpointStroke = { pen?: "ballpoint"; points: ReadonlyArray<readonly [number, number]>; color: InkPdfColor; width: number };
 /** 1쪽에 그대로 들어가는 만년필이나 붓 획. widths는 점마다 지름(페이지 단위)이고 points와 길이가 같다. */
 export type ExportVariableStroke = {
-  pen: "fountain" | "brush";
+  pen: ExportVariablePen;
   points: ReadonlyArray<readonly [number, number]>;
   widths: ReadonlyArray<number>;
   color: InkPdfColor;
@@ -152,6 +163,16 @@ export function outlineToInk(
       .map(({ points, width, color }) => ({ points, width: inkPenWidth(width, setup), color }));
   }
   return { width: outline.width, height: outline.height, setup, strokes };
+}
+
+/**
+ * 이미 만든 획의 펜만 바꾼다. 만년필과 붓은 획 기하가 같아 가변 굵기 획의 pen만 바꾸고 점, 지름, 색은 그대로
+ * 둔다(같은 배열을 함께 쓴다). 볼펜 획은 기하가 달라 그대로 둔다. 입력은 고치지 않고, 바꿀 것이 없으면 입력을 그대로 돌려준다.
+ * 보내기 화면이 고르기를 바꿀 때 사진 분석 없이 파일을 다시 쓰는 데 쓴다(lib/goodnotes-export.ts).
+ */
+export function withExportPen(ink: ExportInk, pen: ExportVariablePen): ExportInk {
+  if (!ink.strokes.some(stroke => isVariableExportStroke(stroke) && stroke.pen !== pen)) return ink;
+  return { ...ink, strokes: ink.strokes.map(stroke => isVariableExportStroke(stroke) && stroke.pen !== pen ? { ...stroke, pen } : stroke) };
 }
 
 /** 1쪽: 흰 배경 A4에 사진 비율 그대로 옮긴 획. 점이 없는 획은 뺀다. 볼펜 획과 가변 굵기 획을 그대로 넘긴다. */

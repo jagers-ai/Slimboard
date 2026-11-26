@@ -321,7 +321,8 @@ h1:focus, h2:focus { outline: none; }
 .goodnotes-state { height: auto; min-height: clamp(180px, 34dvh, 300px); }
 .goodnotes-export { display: flex; flex-direction: column; gap: 12px; }
 .goodnotes-paper {
-  --paper-height: clamp(200px, calc(var(--app-viewport-height, 100dvh) - 240px - var(--safe-bottom)), 560px);
+  /* 240px: header, action bar and hint; 68px: the pen choice and its gap. */
+  --paper-height: clamp(200px, calc(var(--app-viewport-height, 100dvh) - 308px - var(--safe-bottom)), 560px);
   display: block; width: min(100%, calc(var(--paper-height) * var(--paper-ratio))); aspect-ratio: var(--paper-ratio);
   margin: 0 auto; border: 1px solid var(--line); border-radius: 12px; background: #fff;
 }

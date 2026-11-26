@@ -47,6 +47,7 @@ including the camera lab and the signed-in application. Read it before UI work;
 - `나의 슬림보드`: account row, `모든 노트`, `최근 검색어 지우기` and `로그아웃` as 56px menu rows.
 - The standalone lab keeps records only in React memory for the current tab. State this plainly. Do not imply permanent storage or add sensitive photos to browser storage.
 - Keep selected photos on failure or when returning to the list. Warn about accidental page unload when there is session content.
+- Choice group (`.choice-group` in `app/globals.css`): two or three exclusive options in one row, built from native radios inside a `fieldset` with a `legend` (visually hidden when the options speak for themselves). Soft grey track, the chosen option a white segment with a `#dcdee3` border and a bold label; no orange fill, no shadow. Each option is at least 48px tall, labels wrap, arrow keys move the choice and the focus ring is `--primary-ink`. Use it for a setting of the current screen, not for navigation or for a primary action.
 
 ## Mobile and accessibility
 
@@ -118,6 +119,7 @@ loading/error/retry states and at least 48px controls.
 - States: preparing (spinner, disabled `준비 중`), ready (white paper with the pen strokes at the photo's ratio, 12px corners, `#eaebee` border, no shadow), no handwriting / no photo / unfinished note (`노트로 돌아가기`), photo or conversion failure (`다시 시도`). Non-ready states reuse `capture-placeholder` with an icon and one sentence.
 - Share only straight from the tap with the file already prepared. Closing the share sheet says nothing; another failure shows `보내지 못했어요. 다시 눌러 주세요.` above the button. Never announce success after sharing: it does not mean Goodnotes saved the note.
 - When the browser cannot share files, the primary button becomes `파일로 저장`. Decide by capability, never by device detection.
+- Pen: the ready state shows a choice group under the paper with `만년필` (default) and `붓`. Both pens share the stroke shapes, so a change rewrites only the file (no photo analysis, the preview stays); meanwhile the action is the disabled `준비 중` and the newest choice always wins. The choice is remembered on the device as a convenience; without storage the screen starts with `만년필`. The ballpoint fill stays in code only.
 - The screen never names the file format. `lib/goodnotes-export-format.ts` alone decides it (`lib/goodnotes-export.ts` only calls it).
 - The file is a `.goodnotes` document (`application/zip`) so strokes stay erasable and lasso-selectable in Goodnotes. Page 1 holds the pen strokes on a white A4 page (landscape for a landscape photo, portrait otherwise), at the photo's ratio, top-left aligned with a margin of 4% of the page width; colors are the four pen colors the preview uses, widths are clamped to 0.8–6 pt. Page 2 holds the original photo at the photo's ratio. The document title is the note title or `슬림보드 노트`.
 - Pass only `files` to `navigator.share`: with a `title`, iOS saves an extra text file next to the note.

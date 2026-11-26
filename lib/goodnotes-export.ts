@@ -7,6 +7,7 @@ import workerUrl from "./goodnotes-export.worker.ts?worker&url";
 import { readInk, readInkPixels, type Ink, type InkPen, type InkReply, type InkRequest } from "./goodnotes-ink";
 import {
   GOODNOTES_EXPORT_PEN,
+  GOODNOTES_EXPORT_PEN_CHOICES,
   GOODNOTES_EXPORT_TYPE,
   buildGoodnotesExport,
   goodnotesFileName,
@@ -14,8 +15,18 @@ import {
   inkPreviewFillPaths,
   inkPreviewFrame,
   isVariableExportStroke,
+  withExportPen,
+  type ExportVariablePen,
   type ExportVariableStroke,
 } from "./goodnotes-export-format";
+
+/** The pens the screen offers, and the one it starts with. They share the stroke shapes, so changing pen never reads the photo again. */
+export type GoodnotesPen = ExportVariablePen;
+export const GOODNOTES_PENS = GOODNOTES_EXPORT_PEN_CHOICES;
+export const GOODNOTES_DEFAULT_PEN: GoodnotesPen = GOODNOTES_EXPORT_PEN;
+export function isGoodnotesPen(value: unknown): value is GoodnotesPen {
+  return GOODNOTES_PENS.includes(value as GoodnotesPen);
+}
 
 // The file format, its profile and page units are decided only in ./goodnotes-export-format.ts.
 // 배경 PDF 규칙(실기기 확인 2026-11-26, 사진 눈대중 측정): 굿노트는 배경 PDF 1pt를 페이지 단위 11/6개로 그린다.
@@ -46,8 +57,10 @@ export type GoodnotesPreview = {
   paths: Array<{ d: string; color: string; width: number }>;
   fills: Array<{ d: string; color: string }>;
 };
-/** The screen shares or saves `file` and draws `preview` without knowing the format. */
-export type GoodnotesFile = { file: File; preview: GoodnotesPreview };
+/** What a prepared file was written from, so another pen can rewrite it without reading the photo. The screen never looks inside. */
+type GoodnotesSource = { ink: Ink; title: string; photo: Blob };
+/** The screen shares or saves `file` and draws `preview` without knowing the format. `pen` is the pen `file` was written with. */
+export type GoodnotesFile = { file: File; preview: GoodnotesPreview; pen: GoodnotesPen; readonly source: GoodnotesSource };
 export type GoodnotesFailure = "photo-missing" | "photo" | "ink";
 
 export class GoodnotesExportError extends Error {
@@ -61,22 +74,38 @@ export class GoodnotesExportError extends Error {
 
 const workerTimeout = 60_000;
 
-/** Null means the photo holds no handwriting. Aborting rejects and stops the worker. The pen defaults to GOODNOTES_EXPORT_PEN. */
-export async function prepareGoodnotesFile({ photoUrl, title, signal, pen = GOODNOTES_EXPORT_PEN }: {
-  photoUrl: string; title: string; signal: AbortSignal; pen?: InkPen;
+/** Null means the photo holds no handwriting. Aborting rejects and stops the worker. The pen defaults to GOODNOTES_DEFAULT_PEN. */
+export async function prepareGoodnotesFile({ photoUrl, title, signal, pen = GOODNOTES_DEFAULT_PEN }: {
+  photoUrl: string; title: string; signal: AbortSignal; pen?: GoodnotesPen;
 }): Promise<GoodnotesFile | null> {
   const photo = await loadPhoto(photoUrl, signal);
   const ink = await readInWorker(photo, pen, signal) ?? await readOnPage(photo, pen, signal);
   if (!ink.strokes.length) return null;
   try {
-    const bytes = await format.write(ink, title, photo);
-    return {
-      file: new File([bytes as BlobPart], goodnotesFileName(title), { type: format.type }),
-      preview: previewInk(ink),
-    };
+    return { file: await writeFile(ink, title, photo), preview: previewInk(ink), pen, source: { ink, title, photo } };
   } catch (error) {
     throw new GoodnotesExportError("ink", error);
   }
+}
+
+/**
+ * The same handwriting written with another pen: no photo analysis, only the document is written again
+ * (about 0.4 s on the main thread for a real board). Fountain and brush strokes have the same shapes, so the preview stays.
+ */
+export async function changeGoodnotesPen(prepared: GoodnotesFile, pen: GoodnotesPen): Promise<GoodnotesFile> {
+  if (prepared.pen === pen) return prepared;
+  const { title, photo } = prepared.source;
+  const ink = withExportPen(prepared.source.ink, pen);
+  try {
+    return { file: await writeFile(ink, title, photo), preview: prepared.preview, pen, source: { ink, title, photo } };
+  } catch (error) {
+    throw new GoodnotesExportError("ink", error);
+  }
+}
+
+async function writeFile(ink: Ink, title: string, photo: Blob) {
+  const bytes = await format.write(ink, title, photo);
+  return new File([bytes as BlobPart], goodnotesFileName(title), { type: format.type });
 }
 
 // The preview draws the very strokes of the file: same points, colors and widths.

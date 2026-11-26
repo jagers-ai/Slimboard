@@ -7,8 +7,9 @@ import {
 import { INK_PDF_COLORS } from '../lib/ink-pdf.ts';
 import {
   GOODNOTES_EXPORT_EXTENSION, GOODNOTES_EXPORT_MARGIN, GOODNOTES_EXPORT_MAX_PEN_PT, GOODNOTES_EXPORT_MIN_PEN_PT,
-  GOODNOTES_EXPORT_PEN, GOODNOTES_EXPORT_SETUP, GOODNOTES_EXPORT_TYPE, buildGoodnotesExport, goodnotesFileName, inkPage,
-  inkPageLayout, inkPenWidth, inkPreviewColor, inkPreviewFillPaths, inkPreviewFrame, outlineToInk, photoPage,
+  GOODNOTES_EXPORT_PEN, GOODNOTES_EXPORT_PEN_CHOICES, GOODNOTES_EXPORT_SETUP, GOODNOTES_EXPORT_TYPE, buildGoodnotesExport,
+  goodnotesFileName, inkPage, inkPageLayout, inkPenWidth, inkPreviewColor, inkPreviewFillPaths, inkPreviewFrame, outlineToInk,
+  photoPage, withExportPen,
 } from '../lib/goodnotes-export-format.ts';
 import { readInk } from '../lib/goodnotes-ink.ts';
 
@@ -432,6 +433,76 @@ for (const pen of ['fountain', 'brush']) {
     assert.equal(readInk(board(600, 400, []), pen).strokes.length, 0);
   });
 }
+
+// ---------------------------------------------------------------------------
+// 보내기 화면의 펜 고르기(만년필, 붓): 사진을 다시 읽지 않고 펜 종류만 바꿔 파일을 다시 쓴다.
+
+test('화면 선택지는 만년필과 붓이고 처음 값은 만년필이다', () => {
+  assert.deepEqual([...GOODNOTES_EXPORT_PEN_CHOICES], ['fountain', 'brush']);
+  assert.equal(GOODNOTES_EXPORT_PEN, 'fountain');
+  assert.ok(GOODNOTES_EXPORT_PEN_CHOICES.includes(GOODNOTES_EXPORT_PEN));
+});
+
+test('withExportPen은 가변 굵기 획의 펜만 바꾸고 점, 지름, 색과 볼펜 획은 그대로 둔다', () => {
+  const ink = { width: 1600, height: 1200, setup: B, strokes: [
+    { pen: 'fountain', points: [[100, 100], [200, 120]], widths: [2, 3], color: 'red' },
+    { pen: 'brush', points: [[300, 300]], widths: [4], color: 'blue' },
+    { points: [[500, 500], [600, 500]], width: 2, color: 'black' },
+  ] };
+  const snapshot = structuredClone(ink);
+  const brush = withExportPen(ink, 'brush');
+  assert.deepEqual(ink, snapshot, '입력은 고치지 않는다');
+  assert.deepEqual(brush.strokes.map(stroke => stroke.pen), ['brush', 'brush', undefined]);
+  assert.equal(brush.setup, ink.setup);
+  assert.equal(brush.width, ink.width);
+  assert.equal(brush.height, ink.height);
+  brush.strokes.forEach((stroke, index) => {
+    assert.equal(stroke.points, ink.strokes[index].points, '점은 같은 배열');
+    assert.equal(stroke.widths, ink.strokes[index].widths, '지름은 같은 배열');
+    assert.equal(stroke.color, ink.strokes[index].color);
+  });
+  assert.equal(brush.strokes[2], ink.strokes[2], '볼펜 획은 그대로');
+  const fountain = withExportPen(brush, 'fountain');
+  assert.deepEqual(fountain.strokes.map(stroke => stroke.pen), ['fountain', 'fountain', undefined]);
+  assert.equal(withExportPen(fountain, 'fountain'), fountain, '바꿀 것이 없으면 그대로 돌려준다');
+});
+
+test('펜을 바꿔 다시 쓴 파일은 획 기하가 같고 f3만 만년필 1, 붓 4로 바뀐다(되읽기)', async () => {
+  const lines = [
+    [100, 120, 700, 140, 8, 'black'], [120, 220, 120, 420, 6, 'blue'], [300, 260, 520, 420, 5, 'red'],
+    [560, 480, 590, 480, 3, 'black'], [740, 490, 744, 491, 3.5, 'red'],
+  ];
+  // 화면처럼 처음 값(만년필)으로 읽은 뒤 사진 분석 없이 붓, 다시 만년필로 바꾼다.
+  const ink = readInk(board(900, 600, lines), GOODNOTES_EXPORT_PEN);
+  assert.ok(ink.strokes.length >= lines.length);
+  const jpeg = buildSolidJpeg(900, 600, 230);
+  const write = async inkWithPen => {
+    const { pages, notes } = await readBack(await buildGoodnotesExport({ ink: inkWithPen, title: '펜 바꾸기', jpeg, idSeed: 'pen-choice' }));
+    assert.equal(pages.length, 2);
+    const strokes = pageObjects(notes[0]).filter(o => o.kind === KIND_STROKE);
+    assert.equal(pageObjects(notes[1]).filter(o => o.kind === KIND_STROKE).length, 0, '사진 쪽에는 획이 없다');
+    return strokes.map(o => {
+      const info = strokeInfo(o);
+      const vpen = variablePenOf(o);
+      assert.ok(vpen, '가변 굵기 펜으로 되읽힌다');
+      return { f3: info.penType, kind: vpen.kind, color: info.color, centerline: vpen.centerline };
+    });
+  };
+  const fountain = await write(ink);
+  const brush = await write(withExportPen(ink, 'brush'));
+  const again = await write(withExportPen(withExportPen(ink, 'brush'), 'fountain'));
+  assert.equal(fountain.length, ink.strokes.length);
+  assert.equal(brush.length, fountain.length);
+  assert.deepEqual(new Set(fountain.map(s => s.f3)), new Set([1]));
+  assert.deepEqual(new Set(fountain.map(s => s.kind)), new Set(['fountain']));
+  assert.deepEqual(new Set(brush.map(s => s.f3)), new Set([4]));
+  assert.deepEqual(new Set(brush.map(s => s.kind)), new Set(['brush']));
+  brush.forEach((stroke, index) => {
+    assert.deepEqual(stroke.centerline, fountain[index].centerline, `획 ${index}의 중심선과 반폭이 같다`);
+    assert.deepEqual(stroke.color, fountain[index].color);
+  });
+  assert.deepEqual(again, fountain, '붓에서 만년필로 돌아오면 처음 파일과 같다');
+});
 
 test('미리보기 채움 경로: 색마다 하나, 획마다 닫힌 하위 경로, 점 하나짜리 획도 남는다', () => {
   const u = B.unitsPerPt;
