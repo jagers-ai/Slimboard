@@ -1,0 +1,825 @@
+// 글씨 윤곽(채움 모양)을 굿노트 볼펜 획 여러 줄로 채워 같은 모양을 만든다(시험 파일 D2 방식).
+//
+// 입력: 사진에서 딴 덩어리 윤곽(lib/ink-outline.ts). 덩어리마다 짝수-홀수 규칙으로 채우는 닫힌 고리(바깥 고리와 구멍).
+// 출력: 덩어리 하나 = 볼펜 획 하나(점 수 상한을 넘으면 나눈다). 굿노트의 지우개 한 번이 덩어리를 지우고,
+//       올가미가 덩어리째 옮기게 하려는 것이다. 덩어리 안의 서로 떨어진 조각은 다리를 놓으면 배경에 선이 생기므로
+//       조각마다 따로 획을 낸다.
+//
+// 방법(격자 위에서):
+// 1. 고리를 격자에 칠하고 안쪽 거리장 D(경계까지 거리)를 만든다. 바깥 등고선 둘레는 고리 선분까지의 정확한 거리로 고친다.
+// 2. 펜 굵기 = 능선(골격) 반지름 90분위 × 2 × penWidthRatio. 하한과 상한으로 자르고, 실제로 그려질 굵기로 계획한다.
+// 3. D의 등고선을 펜 반지름 r, r + 간격, r + 2 간격 … 에서 딴다. 간격은 펜 굵기 × ringStep(1보다 작아 고리끼리 겹친다).
+// 4. 등고선 펜이 덮지 못한 잉크(능선 틈, 펜보다 가는 부분)를 세선화해 골격 경로로 더한다. 모서리 끝 같은 작은 틈은 버린다.
+// 5. 항목(등고선 고리, 골격 경로)을 최소 신장 트리로 잇고(다리 길이 + 잉크 밖 벌점) 되짚으며 한붓 경로를 만든다.
+// 6. 경로를 펜 굵기 기준 오차로 단순화하고 페이지 단위로 바꾼다.
+//
+// 브라우저, Web Worker, Node 24(type stripping)에서 돈다. enum, namespace, Buffer, 외부 패키지를 쓰지 않는다.
+
+export type FillPoint = readonly [number, number];
+export type FillColor = "black" | "blue" | "red" | "green";
+
+export type FillShape<C extends string = FillColor> = {
+  color: C;
+  /** 짝수-홀수 규칙으로 채우는 닫힌 고리들(사진 픽셀 좌표). 마지막 점이 첫 점과 같아도 된다. */
+  rings: ReadonlyArray<ReadonlyArray<FillPoint>>;
+  /** 넓이(px²). 쓰지 않는다(약속 형식에 있어 받기만 한다). */
+  area?: number;
+  /** 대표 획 굵기(px). 격자 해상도를 정하는 데만 쓴다. 없으면 2 × 넓이 / 둘레로 어림한다. */
+  strokeWidth?: number;
+};
+
+/** 사진 픽셀 → 페이지 단위 변환(goodnotes-file.ts의 FitTransform과 같은 모양). */
+export type FillFit = { scale: number; offsetX: number; offsetY: number };
+
+export type FillOptions = {
+  /** 좌표 변환. 없으면 입력 좌표 그대로 낸다. 굵기와 하한, 상한도 변환한 단위로 본다. */
+  fit?: FillFit;
+  /** 파일에 쓰는 굵기 저장값의 하한과 상한(출력 단위). 기본 0과 무한대. */
+  minPenWidth?: number;
+  maxPenWidth?: number;
+  /** 펜 굵기 / 능선 지름 90분위. 작을수록 모양이 정확하고 점이 많다. */
+  penWidthRatio?: number;
+  /** 등고선 간격 / 펜 굵기. 1보다 작아야 고리 사이가 겹친다. */
+  ringStep?: number;
+  /** 경로 단순화 오차 / 펜 굵기. */
+  tolerance?: number;
+  /** 대표 획 굵기 하나에 들어가는 격자 칸 수. */
+  cellsPerWidth?: number;
+  /** 덩어리 하나의 격자 칸 수 상한. 넘으면 칸을 키운다(큰 테두리 같은 덩어리의 시간을 묶는다). */
+  maxCellsPerShape?: number;
+  /** 획 하나의 점 수 상한. 넘으면 1점 겹쳐 나눈다. */
+  maxPointsPerStroke?: number;
+  /** 굵기 저장값 1이 실제로 그려지는 지름. 기본 GOODNOTES_PEN_DRAWN_PER_STORED. */
+  penDrawnPerStored?: number;
+  /** 출력 좌표를 이 간격으로 반올림한다(압축이 잘 된다). 0이면 그대로. */
+  coordinateStep?: number;
+};
+
+export type FilledStroke<C extends string = FillColor> = {
+  /** 출력 단위 좌표(fit이 있으면 페이지 단위) */
+  points: Array<[number, number]>;
+  /** 굵기 저장값(출력 단위). buildGoodnotesDocument의 width에 그대로 넣는다. */
+  width: number;
+  color: C;
+  /** 입력 shapes에서의 번호 */
+  shape: number;
+};
+
+/**
+ * 볼펜 굵기 저장값 1이 굿노트에서 그려지는 지름(출력 단위).
+ * 기본 1: 두 작성기(natural-ink, goodnotes-codec)가 저장값을 페이지 단위 지름으로 쓰고, 지금 내보내기
+ * (goodnotes-export-format.ts)도 같은 가정이다. goodparse는 6/11 배율 파일에서 약 8% 가늘게(11/12) 잰 기록이 있어,
+ * 실기기에서 가늘게 보이면 이 값을 11/12로 바꾼다. 그러면 계획한 굵기가 그려지도록 저장값을 그만큼 키워 쓴다.
+ * 등고선 간격을 펜 굵기의 0.85배로 둔 것도 이 차이(최대 8%)가 있어도 고리 사이에 흰 줄이 생기지 않게 하려는 것이다.
+ */
+export const GOODNOTES_PEN_DRAWN_PER_STORED = 1;
+
+export const FILL_DEFAULTS = {
+  penWidthRatio: 0.8,
+  ringStep: 0.85,
+  tolerance: 0.07,
+  cellsPerWidth: 6,
+  maxCellsPerShape: 250_000,
+  maxPointsPerStroke: 2000,
+  coordinateStep: 1 / 32,
+} as const;
+
+type Pt = [number, number];
+type Item = { pts: Pt[]; comp: number };
+
+/** 덩어리들을 볼펜 획으로 채운다. 점이 하나라도 있는 덩어리는 적어도 획 하나를 낸다. */
+export function fillShapesWithPen<C extends string>(shapes: ReadonlyArray<FillShape<C>>, options: FillOptions = {}): FilledStroke<C>[] {
+  const out: FilledStroke<C>[] = [];
+  shapes.forEach((shape, index) => {
+    for (const s of fillShapeWithPen(shape, options)) out.push({ ...s, color: shape.color, shape: index });
+  });
+  return out;
+}
+
+/** 덩어리 하나. 결과의 shape는 0이다. */
+export function fillShapeWithPen<C extends string>(shape: FillShape<C>, options: FillOptions = {}): FilledStroke<C>[] {
+  const o = resolve(options);
+  const rings = cleanRings(shape.rings);
+  const all = rings.flat();
+  if (all.length === 0) {
+    const loose = shape.rings.flat().filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (loose.length === 0) return [];
+    return [dotStroke(shape.color, loose, o)];
+  }
+  const filled = rings.filter(r => r.length >= 3);
+  const paths = filled.length ? fillRings(filled, shape.strokeWidth, o) : null;
+  if (!paths || paths.lines.length === 0) return [dotStroke(shape.color, all, o)];
+  const strokes: FilledStroke<C>[] = [];
+  for (const line of paths.lines) {
+    for (const part of splitPoints(line.map(p => output(p, o)), o.maxPointsPerStroke)) {
+      strokes.push({ points: part, width: paths.width, color: shape.color, shape: 0 });
+    }
+  }
+  return strokes;
+}
+
+// ---------------------------------------------------------------------------
+// 옵션과 출력
+
+type Resolved = Required<Omit<FillOptions, "fit">> & { fit: FillFit };
+
+function resolve(options: FillOptions): Resolved {
+  const pick = (v: number | undefined, d: number, ok: (x: number) => boolean) => (v !== undefined && Number.isFinite(v) && ok(v) ? v : d);
+  const fit = options.fit && options.fit.scale > 0 && Number.isFinite(options.fit.scale) ? options.fit : { scale: 1, offsetX: 0, offsetY: 0 };
+  const minPenWidth = pick(options.minPenWidth, 0, v => v >= 0);
+  const maxPenWidth = Math.max(minPenWidth, options.maxPenWidth !== undefined && options.maxPenWidth > 0 ? options.maxPenWidth : Infinity);
+  return {
+    fit,
+    minPenWidth,
+    maxPenWidth,
+    penWidthRatio: pick(options.penWidthRatio, FILL_DEFAULTS.penWidthRatio, v => v > 0),
+    ringStep: pick(options.ringStep, FILL_DEFAULTS.ringStep, v => v > 0.1 && v <= 1.5),
+    tolerance: pick(options.tolerance, FILL_DEFAULTS.tolerance, v => v >= 0),
+    cellsPerWidth: pick(options.cellsPerWidth, FILL_DEFAULTS.cellsPerWidth, v => v >= 2),
+    maxCellsPerShape: pick(options.maxCellsPerShape, FILL_DEFAULTS.maxCellsPerShape, v => v >= 1000),
+    maxPointsPerStroke: Math.max(2, Math.floor(pick(options.maxPointsPerStroke, FILL_DEFAULTS.maxPointsPerStroke, v => v >= 2))),
+    penDrawnPerStored: pick(options.penDrawnPerStored, GOODNOTES_PEN_DRAWN_PER_STORED, v => v > 0),
+    coordinateStep: pick(options.coordinateStep, FILL_DEFAULTS.coordinateStep, v => v >= 0),
+  };
+}
+
+function output([x, y]: Pt, o: Resolved): [number, number] {
+  const X = o.fit.offsetX + x * o.fit.scale;
+  const Y = o.fit.offsetY + y * o.fit.scale;
+  const q = o.coordinateStep;
+  return q > 0 ? [Math.round(X / q) * q, Math.round(Y / q) * q] : [X, Y];
+}
+
+function clampWidth(stored: number, o: Resolved) {
+  return Math.min(o.maxPenWidth, Math.max(o.minPenWidth, stored));
+}
+
+/** 고리가 없거나 너무 작은 덩어리: 가운데에 점 하나. 굵기는 덩어리 크기(하한, 상한 적용). */
+function dotStroke<C extends string>(color: C, pts: ReadonlyArray<FillPoint>, o: Resolved): FilledStroke<C> {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const size = Math.max(x1 - x0, y1 - y0) * o.fit.scale;
+  const stored = clampWidth(size / o.penDrawnPerStored, o);
+  return { points: [output([(x0 + x1) / 2, (y0 + y1) / 2], o)], width: stored > 0 ? stored : Math.max(o.minPenWidth, 1e-3), color, shape: 0 };
+}
+
+function splitPoints(points: Array<[number, number]>, max: number): Array<Array<[number, number]>> {
+  const pts = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
+  if (pts.length <= max) return [pts];
+  const parts: Array<Array<[number, number]>> = [];
+  for (let i = 0; i < pts.length - 1; i += max - 1) parts.push(pts.slice(i, Math.min(pts.length, i + max)));
+  return parts;
+}
+
+function cleanRings(rings: FillShape<string>["rings"]): Pt[][] {
+  const out: Pt[][] = [];
+  for (const ring of rings) {
+    const r: Pt[] = [];
+    for (const p of ring) {
+      const x = p[0], y = p[1];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const last = r[r.length - 1];
+      if (!last || last[0] !== x || last[1] !== y) r.push([x, y]);
+    }
+    while (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop();
+    if (r.length) out.push(r);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 덩어리 하나를 경로로
+
+type Grid = { W: number; H: number; cell: number; ox: number; oy: number };
+
+function fillRings(rings: Pt[][], strokeWidth: number | undefined, o: Resolved): { lines: Pt[][]; width: number } | null {
+  // 격자: 대표 굵기 하나에 cellsPerWidth칸. 여백 2칸.
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, area = 0, perim = 0;
+  for (const r of rings) {
+    let a = 0;
+    for (let i = 0; i < r.length; i += 1) {
+      const p = r[i], q = r[(i + 1) % r.length];
+      a += p[0] * q[1] - q[0] * p[1];
+      perim += Math.hypot(q[0] - p[0], q[1] - p[1]);
+      x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+    }
+    area += a / 2;
+  }
+  const span = Math.max(x1 - x0, y1 - y0);
+  if (!(span > 0) || !(perim > 0)) return null;
+  let est = strokeWidth !== undefined && strokeWidth > 0 && Number.isFinite(strokeWidth) ? strokeWidth : (2 * Math.abs(area)) / perim;
+  if (!(est > 0)) est = span;
+  est = Math.min(est, span);
+  const PAD = 2;
+  let cell = est / o.cellsPerWidth;
+  const cellsFor = (c: number) => (Math.ceil((x1 - x0) / c) + 2 * PAD) * (Math.ceil((y1 - y0) / c) + 2 * PAD);
+  if (cellsFor(cell) > o.maxCellsPerShape) cell *= Math.sqrt(cellsFor(cell) / o.maxCellsPerShape) * 1.02;
+  const g: Grid = { W: Math.ceil((x1 - x0) / cell) + 2 * PAD, H: Math.ceil((y1 - y0) / cell) + 2 * PAD, cell, ox: x0 - PAD * cell, oy: y0 - PAD * cell };
+  const segs = gridSegments(rings, g);
+  const mask = rasterize(segs, g);
+  const N = g.W * g.H;
+  let inkCells = 0;
+  for (let p = 0; p < N; p += 1) inkCells += mask[p];
+  if (inkCells === 0) return null;
+
+  // 안쪽 거리장(경계까지, 칸). 바깥은 -0.5로 둔다(등고선은 안쪽에서만 딴다).
+  const outside = new Uint8Array(N);
+  for (let p = 0; p < N; p += 1) outside[p] = mask[p] ? 0 : 1;
+  const inSq = edtSq(outside, g.W, g.H);
+  let D: Float32Array = new Float32Array(N);
+  for (let p = 0; p < N; p += 1) D[p] = mask[p] ? Math.sqrt(inSq[p]) - 0.5 : -0.5;
+  // 펜 굵기(칸, 실제로 그려지는 지름). 능선값은 흐리기 전에 잰다(흐리면 능선이 낮아진다).
+  const ridge = ridgeRadii(D, mask, g.W, g.H);
+  D = blur(D, g.W, g.H);
+  const r90 = ridge.length ? ridge[Math.min(ridge.length - 1, Math.floor(0.9 * ridge.length))] : 0.5;
+  const toOut = g.cell * o.fit.scale;
+  const stored = clampWidth((o.penWidthRatio * 2 * Math.max(0.5, r90) * toOut) / o.penDrawnPerStored, o);
+  const d = (stored * o.penDrawnPerStored) / toOut;
+  const r = d / 2;
+
+  exactBand(D, mask, segs, g, r);
+  let dmax = 0;
+  for (let p = 0; p < N; p += 1) if (D[p] > dmax) dmax = D[p];
+
+  const tol = o.tolerance * d;
+  const spacing = Math.max(0.5, d / 3);
+  const items: Item[] = [];
+  const step = Math.max(0.25, o.ringStep * d);
+  for (let l = r; l < dmax; l += step) {
+    for (const loop of contourLoops(D, g.W, g.H, l)) {
+      if (perimeter(loop, true) < Math.max(0.5, 0.25 * d)) { items.push({ pts: [centroid(loop)], comp: 0 }); continue; }
+      const simple = simplifyClosed(loop, Math.max(0.05, Math.min(tol, 0.5)));
+      items.push({ pts: densify(simple, true, spacing), comp: 0 });
+    }
+  }
+
+  // 등고선 펜이 덮지 못한 잉크 → 골격 경로
+  const seeds = new Uint8Array(N);
+  for (const it of items) markPath(seeds, it.pts, g.W, g.H);
+  // 첫 등고선 안쪽 칸: 가장 가까운 등고선까지 거리 = D - (그 칸 아래 가장 높은 등고선값). 거리장이라 정확하다.
+  // 첫 등고선 바깥 칸(경계 띠, 펜보다 가는 부분): 경로 칸까지의 격자 거리(칸 크기만큼 오차를 둔다).
+  const coverSq = items.length ? edtSq(seeds, g.W, g.H) : null;
+  const slackIn = 0.04 * d, reachOut = r + 0.6;
+  const U = new Uint8Array(N);
+  for (let p = 0; p < N; p += 1) {
+    if (!mask[p]) continue;
+    if (!coverSq) { U[p] = 1; continue; }
+    const v = D[p];
+    const gap = v >= r ? v - (r + Math.floor((v - r) / step) * step) : Infinity;
+    if (gap <= r + slackIn) continue;
+    if (v < r && coverSq[p] <= reachOut * reachOut) continue;
+    U[p] = 1;
+  }
+  for (const piece of skeletonItems(U, D, g, r, d, items.length > 0)) items.push(piece);
+
+  // 잉크 조각마다 따로 잇는다
+  const comp = labels(mask, g.W, g.H, D);
+  for (const it of items) it.comp = compAt(comp.label, it.pts[0], g.W);
+  const lines: Pt[][] = [];
+  for (let c = 1; c <= comp.count; c += 1) {
+    let mine = items.filter(it => it.comp === c);
+    if (mine.length === 0) {
+      const p = comp.peak[c];
+      mine = [{ pts: [[(p % g.W) + 0.5, Math.floor(p / g.W) + 0.5]], comp: c }];
+    }
+    const path = connect(mine, D, g, r, d);
+    const simple = simplifyOpen(trimTail(path), tol);
+    lines.push(simple.map(([x, y]) => [g.ox + x * g.cell, g.oy + y * g.cell] as Pt));
+  }
+  return { lines, width: stored };
+}
+
+// ---------------------------------------------------------------------------
+// 격자 도구
+
+type Segs = { ax: Float64Array; ay: Float64Array; bx: Float64Array; by: Float64Array; n: number };
+
+function gridSegments(rings: Pt[][], g: Grid): Segs {
+  let n = 0;
+  for (const r of rings) n += r.length;
+  const s: Segs = { ax: new Float64Array(n), ay: new Float64Array(n), bx: new Float64Array(n), by: new Float64Array(n), n };
+  let k = 0;
+  for (const r of rings) {
+    for (let i = 0; i < r.length; i += 1) {
+      const p = r[i], q = r[(i + 1) % r.length];
+      s.ax[k] = (p[0] - g.ox) / g.cell; s.ay[k] = (p[1] - g.oy) / g.cell;
+      s.bx[k] = (q[0] - g.ox) / g.cell; s.by[k] = (q[1] - g.oy) / g.cell;
+      k += 1;
+    }
+  }
+  return s;
+}
+
+/** 짝수-홀수 규칙, 칸 중심 기준. */
+function rasterize(s: Segs, g: Grid): Uint8Array {
+  const { W, H } = g, mask = new Uint8Array(W * H), rows: number[][] = [];
+  for (let j = 0; j < H; j += 1) rows.push([]);
+  for (let k = 0; k < s.n; k += 1) {
+    const ay = s.ay[k], by = s.by[k];
+    if (ay === by) continue;
+    const ya = Math.min(ay, by), yb = Math.max(ay, by);
+    const j0 = Math.max(0, Math.ceil(ya - 0.5)), j1 = Math.min(H - 1, Math.ceil(yb - 0.5) - 1);
+    const ax = s.ax[k], slope = (s.bx[k] - ax) / (by - ay);
+    for (let j = j0; j <= j1; j += 1) rows[j].push(ax + (j + 0.5 - ay) * slope);
+  }
+  for (let j = 0; j < H; j += 1) {
+    const xs = rows[j].sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const i0 = Math.max(0, Math.ceil(xs[k] - 0.5)), i1 = Math.min(W - 1, Math.ceil(xs[k + 1] - 0.5) - 1);
+      for (let i = i0; i <= i1; i += 1) mask[j * W + i] = 1;
+    }
+  }
+  return mask;
+}
+
+/** 원천 칸(src = 1)까지의 유클리드 거리 제곱(칸 중심 사이). Felzenszwalb-Huttenlocher. */
+function edtSq(src: Uint8Array, W: number, H: number): Float64Array {
+  const INF = 1e20, f = new Float64Array(W * H);
+  for (let p = 0; p < W * H; p += 1) f[p] = src[p] ? 0 : INF;
+  const n = Math.max(W, H), g = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  const pass = (len: number) => {
+    let k = 0;
+    v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < len; q += 1) {
+      if (g[q] >= INF) continue;
+      if (g[v[k]] >= INF) { v[k] = q; continue; }
+      let s = (g[q] + q * q - (g[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (k > 0 && s <= z[k]) { k -= 1; s = (g[q] + q * q - (g[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); }
+      k += 1; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q += 1) {
+      while (z[k + 1] < q) k += 1;
+      d[q] = g[v[k]] >= INF ? INF : (q - v[k]) * (q - v[k]) + g[v[k]];
+    }
+  };
+  for (let x = 0; x < W; x += 1) {
+    for (let y = 0; y < H; y += 1) g[y] = f[y * W + x];
+    pass(H);
+    for (let y = 0; y < H; y += 1) f[y * W + x] = d[y];
+  }
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) g[x] = f[y * W + x];
+    pass(W);
+    for (let x = 0; x < W; x += 1) f[y * W + x] = d[x];
+  }
+  return f;
+}
+
+function blur(a: Float32Array, W: number, H: number): Float32Array {
+  const t = new Float32Array(a.length), out = new Float32Array(a.length);
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    const p = y * W + x;
+    t[p] = x === 0 || x === W - 1 ? a[p] : 0.25 * a[p - 1] + 0.5 * a[p] + 0.25 * a[p + 1];
+  }
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    const p = y * W + x;
+    out[p] = y === 0 || y === H - 1 ? t[p] : 0.25 * t[p - W] + 0.5 * t[p] + 0.25 * t[p + W];
+  }
+  return out;
+}
+
+/** 능선 칸(네 방향 중 하나에서 극대)의 거리값, 오름차순. */
+function ridgeRadii(D: Float32Array, mask: Uint8Array, W: number, H: number): Float32Array {
+  const out: number[] = [];
+  const offs = [1, W, W + 1, W - 1];
+  for (let y = 1; y < H - 1; y += 1) for (let x = 1; x < W - 1; x += 1) {
+    const p = y * W + x;
+    if (!mask[p]) continue;
+    const v = D[p];
+    for (const o of offs) {
+      if (v >= D[p - o] && v >= D[p + o] && (v > D[p - o] || v > D[p + o])) { out.push(v); break; }
+    }
+  }
+  return Float32Array.from(out).sort();
+}
+
+/** 펜 반지름 r 근처 칸의 거리값을 고리 선분까지의 정확한 거리로 바꾼다(바깥 등고선이 칸 해상도에 덜 묶이게). */
+function exactBand(D: Float32Array, mask: Uint8Array, s: Segs, g: Grid, r: number) {
+  const { W, H } = g, S = 8, NX = Math.ceil(W / S), NY = Math.ceil(H / S), R = r + 2.6;
+  const buckets: number[][] = [];
+  for (let i = 0; i < NX * NY; i += 1) buckets.push([]);
+  for (let k = 0; k < s.n; k += 1) {
+    const bx0 = Math.max(0, Math.floor((Math.min(s.ax[k], s.bx[k]) - R) / S)), bx1 = Math.min(NX - 1, Math.floor((Math.max(s.ax[k], s.bx[k]) + R) / S));
+    const by0 = Math.max(0, Math.floor((Math.min(s.ay[k], s.by[k]) - R) / S)), by1 = Math.min(NY - 1, Math.floor((Math.max(s.ay[k], s.by[k]) + R) / S));
+    for (let by = by0; by <= by1; by += 1) for (let bx = bx0; bx <= bx1; bx += 1) buckets[by * NX + bx].push(k);
+  }
+  const near = (x: number, y: number) => {
+    let best = Infinity;
+    for (const k of buckets[Math.floor(y / S) * NX + Math.floor(x / S)]) {
+      const ax = s.ax[k], ay = s.ay[k], dx = s.bx[k] - ax, dy = s.by[k] - ay, l2 = dx * dx + dy * dy;
+      const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+      const ex = x - ax - t * dx, ey = y - ay - t * dy, v = ex * ex + ey * ey;
+      if (v < best) best = v;
+    }
+    return Math.sqrt(best);
+  };
+  for (let y = 1; y < H - 1; y += 1) for (let x = 1; x < W - 1; x += 1) {
+    const p = y * W + x, v = D[p];
+    let use = mask[p] ? v >= r - 1.6 && v <= r + 1.6 : false;
+    if (!mask[p] && r < 2.5) use = mask[p - 1] + mask[p + 1] + mask[p - W] + mask[p + W] > 0;
+    if (!use) continue;
+    const e = near(x + 0.5, y + 0.5);
+    if (Number.isFinite(e)) D[p] = mask[p] ? e : -e;
+  }
+}
+
+/** 등고선(칸 중심 격자, 값 > level 쪽이 안). 닫힌 고리들. */
+function contourLoops(D: Float32Array, W: number, H: number, level: number): Pt[][] {
+  const E = 2 * W * H, next = new Int32Array(E).fill(-1), px = new Float32Array(E), py = new Float32Array(E);
+  const hEdge = (x: number, y: number) => y * W + x, vEdge = (x: number, y: number) => W * H + y * W + x;
+  const setH = (x: number, y: number) => { const e = hEdge(x, y), a = D[y * W + x], b = D[y * W + x + 1]; px[e] = x + (level - a) / (b - a) + 0.5; py[e] = y + 0.5; return e; };
+  const setV = (x: number, y: number) => { const e = vEdge(x, y), a = D[y * W + x], b = D[(y + 1) * W + x]; px[e] = x + 0.5; py[e] = y + (level - a) / (b - a) + 0.5; return e; };
+  let any = false;
+  for (let y = 0; y + 1 < H; y += 1) for (let x = 0; x + 1 < W; x += 1) {
+    const a = D[y * W + x] > level, b = D[y * W + x + 1] > level, c = D[(y + 1) * W + x + 1] > level, d = D[(y + 1) * W + x] > level;
+    const code = (a ? 8 : 0) | (b ? 4 : 0) | (c ? 2 : 0) | (d ? 1 : 0);
+    if (code === 0 || code === 15) continue;
+    any = true;
+    const T = a !== b ? setH(x, y) : -1, R = b !== c ? setV(x + 1, y) : -1, B = d !== c ? setH(x, y + 1) : -1, L = a !== d ? setV(x, y) : -1;
+    switch (code) {
+      case 1: next[L] = B; break;
+      case 2: next[B] = R; break;
+      case 3: next[L] = R; break;
+      case 4: next[R] = T; break;
+      case 5: next[L] = T; next[R] = B; break;
+      case 6: next[B] = T; break;
+      case 7: next[L] = T; break;
+      case 8: next[T] = L; break;
+      case 9: next[T] = B; break;
+      case 10: next[T] = R; next[B] = L; break;
+      case 11: next[T] = R; break;
+      case 12: next[R] = L; break;
+      case 13: next[R] = B; break;
+      case 14: next[B] = L; break;
+      default: break;
+    }
+  }
+  const loops: Pt[][] = [];
+  if (!any) return loops;
+  for (let s = 0; s < E; s += 1) {
+    if (next[s] < 0) continue;
+    const loop: Pt[] = [];
+    let e = s;
+    while (e >= 0 && next[e] >= 0) {
+      loop.push([px[e], py[e]]);
+      const n = next[e];
+      next[e] = -1;
+      e = n;
+    }
+    if (loop.length >= 2) loops.push(loop);
+  }
+  return loops;
+}
+
+/** 경로 점이 지나는 칸을 표시한다(반 칸 간격으로). */
+function markPath(seeds: Uint8Array, pts: Pt[], W: number, H: number) {
+  const mark = (x: number, y: number) => {
+    const i = Math.floor(x), j = Math.floor(y);
+    if (i >= 0 && j >= 0 && i < W && j < H) seeds[j * W + i] = 1;
+  };
+  mark(pts[0][0], pts[0][1]);
+  for (let k = 0; k < pts.length; k += 1) {
+    const a = pts[k], b = pts[(k + 1) % pts.length], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5);
+    for (let t = 1; t <= n; t += 1) mark(a[0] + ((b[0] - a[0]) * t) / n, a[1] + ((b[1] - a[1]) * t) / n);
+  }
+}
+
+/** 8방향 연결 덩어리 번호(1부터)와 덩어리마다 가장 깊은 칸. */
+function labels(mask: Uint8Array, W: number, H: number, D: Float32Array) {
+  const label = new Int32Array(W * H), stack = new Int32Array(W * H), peakAt: number[] = [-1];
+  let count = 0;
+  for (let s = 0; s < W * H; s += 1) {
+    if (!mask[s] || label[s]) continue;
+    count += 1;
+    let top = 0, best = s;
+    stack[top++] = s; label[s] = count;
+    while (top) {
+      const p = stack[--top], x = p % W, y = (p - x) / W;
+      if (D[p] > D[best]) best = p;
+      for (let j = -1; j <= 1; j += 1) for (let i = -1; i <= 1; i += 1) {
+        const X = x + i, Y = y + j;
+        if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+        const q = Y * W + X;
+        if (mask[q] && !label[q]) { label[q] = count; stack[top++] = q; }
+      }
+    }
+    peakAt.push(best);
+  }
+  return { label, count, peak: peakAt };
+}
+
+function compAt(label: Int32Array, p: Pt, W: number): number {
+  const x = Math.floor(p[0]), y = Math.floor(p[1]);
+  let best = 0, bd = Infinity;
+  for (let j = -1; j <= 1; j += 1) for (let i = -1; i <= 1; i += 1) {
+    const v = label[(y + j) * W + x + i];
+    const dd = (x + i + 0.5 - p[0]) ** 2 + (y + j + 0.5 - p[1]) ** 2;
+    if (v && dd < bd) { bd = dd; best = v; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// 덮이지 않은 잉크의 골격
+
+/** Zhang-Suen 세선화 후 끝을 다듬고, 덩어리마다 되짚는 한붓 경로(닫힌 항목)를 만든다. */
+function skeletonItems(U: Uint8Array, D: Float32Array, g: Grid, r: number, d: number, filter: boolean): Item[] {
+  const { W, H } = g, N = W * H, lab = new Int32Array(N), stack = new Int32Array(N), items: Item[] = [];
+  const comps: number[][] = [];
+  for (let s = 0; s < N; s += 1) {
+    if (!U[s] || lab[s]) continue;
+    const id = comps.length + 1, list: number[] = [];
+    let top = 0;
+    stack[top++] = s; lab[s] = id;
+    while (top) {
+      const p = stack[--top];
+      list.push(p);
+      for (const o of [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1]) {
+        const q = p + o;
+        if (U[q] && !lab[q]) { lab[q] = id; stack[top++] = q; }
+      }
+    }
+    comps.push(list);
+  }
+  const keep = new Uint8Array(N);
+  const kept: number[][] = [];
+  for (const list of comps) {
+    // 모서리 끝(둥근 펜이 닿지 못하는 뾰족한 곳)과 아주 작은 틈은 버린다. 그리면 펜이 잉크 밖으로 나가고
+    // 모서리 양쪽에 작은 빈 주머니가 갇힌다. 펜보다 가는 긴 부분은 남긴다.
+    if (filter) {
+      if (list.length < 0.12 * d * d) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, top = 0;
+      for (const p of list) { const x = p % W, y = (p - x) / W; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); top = Math.max(top, D[p]); }
+      if (Math.max(x1 - x0, y1 - y0) + 1 <= 0.8 * d && top <= 0.5 * r) continue;
+    }
+    for (const p of list) keep[p] = 1;
+    kept.push(list);
+  }
+  if (!kept.length) return items;
+  thin(keep, kept.flat(), W);
+  const N8 = [-W, -W + 1, 1, W + 1, W, W - 1, -1, -W - 1];
+  const ORDER = [-W, 1, W, -1, -W + 1, W + 1, W - 1, -W - 1];
+  const deg = (p: number) => { let n = 0; for (const o of N8) n += keep[p + o]; return n; };
+  for (const list of kept) {
+    let alive = list.filter(p => keep[p]);
+    if (alive.length === 0) {
+      const p = list.reduce((a, b) => (D[b] > D[a] ? b : a));
+      items.push({ pts: [[(p % W) + 0.5, Math.floor(p / W) + 0.5]], comp: 0 });
+      continue;
+    }
+    // 끝 다듬기: 펜이 잉크 밖으로 나가는 끝 칸이 안쪽 칸의 원에 들어가면 지운다.
+    let count = alive.length;
+    const queue = alive.filter(p => deg(p) <= 1);
+    while (queue.length && count > 1) {
+      const p = queue.pop() as number;
+      if (!keep[p] || D[p] >= r || deg(p) !== 1) continue;
+      let n = -1;
+      for (const o of N8) if (keep[p + o]) n = p + o;
+      const step = Math.abs(n - p) === 1 || Math.abs(n - p) === W ? 1 : Math.SQRT2;
+      if (step + D[p] <= D[n] + 0.35) { keep[p] = 0; count -= 1; queue.push(n); }
+    }
+    alive = alive.filter(p => keep[p]);
+    // 되짚는 깊이 우선 경로
+    const start = alive.find(p => deg(p) <= 1) ?? alive[0];
+    const seen = new Set<number>([start]), path: Pt[] = [], st: Array<[number, number]> = [[start, 0]];
+    const at = (p: number): Pt => [(p % W) + 0.5, Math.floor(p / W) + 0.5];
+    path.push(at(start));
+    while (st.length) {
+      const top = st[st.length - 1];
+      let moved = false;
+      while (top[1] < 8) {
+        const q = top[0] + ORDER[top[1]];
+        top[1] += 1;
+        if (keep[q] && !seen.has(q)) { seen.add(q); st.push([q, 0]); path.push(at(q)); moved = true; break; }
+      }
+      if (!moved) { st.pop(); if (st.length) path.push(at(st[st.length - 1][0])); }
+    }
+    if (path.length > 1) path.pop();
+    items.push({ pts: path, comp: 0 });
+  }
+  return items;
+}
+
+function thin(m: Uint8Array, list: number[], W: number) {
+  let cur = list.filter(p => m[p]);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let step = 0; step < 2; step += 1) {
+      const del: number[] = [];
+      for (const p of cur) {
+        const n0 = m[p - W], n1 = m[p - W + 1], n2 = m[p + 1], n3 = m[p + W + 1], n4 = m[p + W], n5 = m[p + W - 1], n6 = m[p - 1], n7 = m[p - W - 1];
+        const b = n0 + n1 + n2 + n3 + n4 + n5 + n6 + n7;
+        if (b < 2 || b > 6) continue;
+        const a = (!n0 && n1 ? 1 : 0) + (!n1 && n2 ? 1 : 0) + (!n2 && n3 ? 1 : 0) + (!n3 && n4 ? 1 : 0) + (!n4 && n5 ? 1 : 0) + (!n5 && n6 ? 1 : 0) + (!n6 && n7 ? 1 : 0) + (!n7 && n0 ? 1 : 0);
+        if (a !== 1) continue;
+        if (step === 0 ? n0 * n2 * n4 || n2 * n4 * n6 : n0 * n2 * n6 || n0 * n4 * n6) continue;
+        del.push(p);
+      }
+      for (const p of del) m[p] = 0;
+      if (del.length) { changed = true; cur = cur.filter(p => m[p]); }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 항목 잇기
+
+function sampleD(D: Float32Array, g: Grid, x: number, y: number) {
+  const u = Math.max(0, Math.min(g.W - 1.001, x - 0.5)), v = Math.max(0, Math.min(g.H - 1.001, y - 0.5));
+  const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, p = j * g.W + i;
+  return (D[p] * (1 - fu) + D[p + 1] * fu) * (1 - fv) + (D[p + g.W] * (1 - fu) + D[p + g.W + 1] * fu) * fv;
+}
+
+/** 다리 비용: 길이 + 펜이 잉크 밖으로 나가는 양의 6배. */
+function bridgeCost(a: Pt, b: Pt, D: Float32Array, g: Grid, r: number, slack: number) {
+  const l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / 0.5));
+  let pen = 0;
+  for (let k = 0; k <= n; k += 1) pen += Math.max(0, r - slack - sampleD(D, g, a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
+  return l + (6 * pen * l) / n;
+}
+
+type Link = { i: number; j: number; ia: number; jb: number; cost: number };
+
+/** 항목들을 최소 신장 트리로 잇고 되짚는 한붓 경로를 만든다. */
+function connect(items: Item[], D: Float32Array, g: Grid, r: number, d: number): Pt[] {
+  if (items.length === 1) return walkAll(items, [], 0);
+  const slack = Math.max(0.5, 0.15 * d);
+  // 가까운 점 쌍 후보(격자 해시)
+  const B = Math.max(1.5, 1.25 * d), NX = Math.ceil(g.W / B) + 1;
+  const hash = new Map<number, number[]>();
+  const gi: number[] = [], gk: number[] = [];
+  items.forEach((it, i) => it.pts.forEach((p, k) => {
+    const key = Math.floor(p[1] / B) * NX + Math.floor(p[0] / B);
+    let list = hash.get(key);
+    if (!list) hash.set(key, list = []);
+    list.push(gi.length);
+    gi.push(i); gk.push(k);
+  }));
+  const n = items.length, K = 4;
+  const cands = new Map<number, Array<{ v: number; ia: number; jb: number }>>();
+  for (let a = 0; a < gi.length; a += 1) {
+    const i = gi[a], p = items[i].pts[gk[a]], bx = Math.floor(p[0] / B), by = Math.floor(p[1] / B);
+    for (let y = by - 1; y <= by + 1; y += 1) for (let x = bx - 1; x <= bx + 1; x += 1) {
+      const list = hash.get(y * NX + x);
+      if (!list) continue;
+      for (const b of list) {
+        const j = gi[b];
+        if (j <= i) continue;
+        const q = items[j].pts[gk[b]], v = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2, key = i * n + j;
+        let c = cands.get(key);
+        if (!c) cands.set(key, c = []);
+        if (c.length < K || v < c[c.length - 1].v) {
+          c.push({ v, ia: gk[a], jb: gk[b] });
+          c.sort((s, t) => s.v - t.v);
+          if (c.length > K) c.pop();
+        }
+      }
+    }
+  }
+  const links: Link[] = [];
+  for (const [key, c] of cands) {
+    const i = Math.floor(key / n), j = key % n;
+    let best: Link | null = null;
+    for (const { ia, jb } of c) {
+      const cost = bridgeCost(items[i].pts[ia], items[j].pts[jb], D, g, r, slack);
+      if (!best || cost < best.cost) best = { i, j, ia, jb, cost };
+    }
+    if (best) links.push(best);
+  }
+  links.sort((s, t) => s.cost - t.cost);
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const tree: Link[] = [];
+  for (const l of links) {
+    const a = find(l.i), b = find(l.j);
+    if (a !== b) { parent[a] = b; tree.push(l); }
+  }
+  // 멀리 떨어진 항목(드묾): 가장 가까운 점 쌍으로 잇는다.
+  for (;;) {
+    const root = find(0), inA: number[] = [], out: number[] = [];
+    for (let i = 0; i < n; i += 1) (find(i) === root ? inA : out).push(i);
+    if (!out.length) break;
+    let best: Link | null = null;
+    for (const i of inA) for (const j of out) {
+      const P = items[i].pts, Q = items[j].pts, si = Math.max(1, Math.floor(P.length / 200)), sj = Math.max(1, Math.floor(Q.length / 200));
+      for (let a = 0; a < P.length; a += si) for (let b = 0; b < Q.length; b += sj) {
+        const v = (P[a][0] - Q[b][0]) ** 2 + (P[a][1] - Q[b][1]) ** 2;
+        if (!best || v < best.cost) best = { i, j, ia: a, jb: b, cost: v };
+      }
+    }
+    if (!best) break;
+    parent[find(best.j)] = root;
+    tree.push(best);
+  }
+  let rootItem = 0;
+  items.forEach((it, i) => { if (it.pts.length > items[rootItem].pts.length) rootItem = i; });
+  return walkAll(items, tree, rootItem);
+}
+
+/** 트리를 따라 걷는다. 항목은 모두 닫힌 차례열이다(고리, 되짚는 골격, 점 하나). */
+function walkAll(items: Item[], tree: Link[], root: number): Pt[] {
+  const adj: Array<Array<{ to: number; at: number; start: number }>> = items.map(() => []);
+  for (const l of tree) {
+    adj[l.i].push({ to: l.j, at: l.ia, start: l.jb });
+    adj[l.j].push({ to: l.i, at: l.jb, start: l.ia });
+  }
+  const out: Pt[] = [], seen = new Uint8Array(items.length);
+  const emit = (p: Pt) => { const q = out[out.length - 1]; if (!q || q[0] !== p[0] || q[1] !== p[1]) out.push(p); };
+  const visit = (i: number, s: number) => {
+    seen[i] = 1;
+    const pts = items[i].pts, n = pts.length, kids = new Map<number, Array<{ to: number; start: number }>>();
+    for (const e of adj[i]) {
+      if (seen[e.to]) continue;
+      let l = kids.get(e.at);
+      if (!l) kids.set(e.at, l = []);
+      l.push(e);
+    }
+    for (let t = 0; t <= n; t += 1) {
+      const k = (s + t) % n;
+      emit(pts[k]);
+      if (t === n) break;
+      for (const c of kids.get(k) ?? []) {
+        if (seen[c.to]) continue;
+        visit(c.to, c.start);
+        emit(pts[k]);
+      }
+    }
+  };
+  visit(root, 0);
+  return out;
+}
+
+/** 끝에 남은 되짚기(이미 그린 선분을 거꾸로 가는 것)를 떼어 낸다. */
+function trimTail(path: Pt[]): Pt[] {
+  if (path.length < 3) return path;
+  const key = (a: Pt, b: Pt) => (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]) ? `${a[0]},${a[1]},${b[0]},${b[1]}` : `${b[0]},${b[1]},${a[0]},${a[1]}`);
+  const count = new Map<string, number>();
+  for (let i = 1; i < path.length; i += 1) { const k = key(path[i - 1], path[i]); count.set(k, (count.get(k) ?? 0) + 1); }
+  let end = path.length;
+  while (end > 2) {
+    const k = key(path[end - 2], path[end - 1]), c = count.get(k) ?? 0;
+    if (c < 2) break;
+    count.set(k, c - 1);
+    end -= 1;
+  }
+  return path.slice(0, end);
+}
+
+// ---------------------------------------------------------------------------
+// 폴리라인 도구
+
+function perimeter(pts: Pt[], closed: boolean) {
+  let s = 0;
+  for (let i = 1; i < pts.length; i += 1) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (closed && pts.length > 1) s += Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]);
+  return s;
+}
+
+function centroid(pts: Pt[]): Pt {
+  let x = 0, y = 0;
+  for (const p of pts) { x += p[0]; y += p[1]; }
+  return [x / pts.length, y / pts.length];
+}
+
+function densify(pts: Pt[], closed: boolean, step: number): Pt[] {
+  const out: Pt[] = [], n = pts.length;
+  for (let i = 0; i < (closed ? n : n - 1); i += 1) {
+    const a = pts[i], b = pts[(i + 1) % n], m = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = 0; k < m; k += 1) out.push([a[0] + ((b[0] - a[0]) * k) / m, a[1] + ((b[1] - a[1]) * k) / m]);
+  }
+  if (!closed) out.push(pts[n - 1]);
+  return out;
+}
+
+/** Douglas-Peucker(열린 폴리라인). */
+function simplifyOpen(pts: Pt[], tol: number): Pt[] {
+  if (pts.length < 3 || tol <= 0) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const st: Array<[number, number]> = [[0, pts.length - 1]];
+  while (st.length) {
+    const [a, b] = st.pop() as [number, number];
+    let bi = -1, bd = tol;
+    const ax = pts[a][0], ay = pts[a][1], dx = pts[b][0] - ax, dy = pts[b][1] - ay, l2 = dx * dx + dy * dy;
+    for (let i = a + 1; i < b; i += 1) {
+      const qx = pts[i][0] - ax, qy = pts[i][1] - ay, t = l2 ? Math.max(0, Math.min(1, (qx * dx + qy * dy) / l2)) : 0;
+      const e = Math.hypot(qx - t * dx, qy - t * dy);
+      if (e > bd) { bd = e; bi = i; }
+    }
+    if (bi > 0) { keep[bi] = 1; st.push([a, bi], [bi, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+/** 닫힌 고리 단순화: 가장 먼 두 점에서 나눠 각각 단순화한다. */
+function simplifyClosed(pts: Pt[], tol: number): Pt[] {
+  if (pts.length < 4) return pts;
+  let far = 0, fd = -1;
+  for (let i = 1; i < pts.length; i += 1) {
+    const v = (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2;
+    if (v > fd) { fd = v; far = i; }
+  }
+  const a = simplifyOpen(pts.slice(0, far + 1), tol), b = simplifyOpen([...pts.slice(far), pts[0]], tol);
+  return [...a, ...b.slice(1, -1)];
+}

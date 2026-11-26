@@ -99,7 +99,7 @@ function positive(v: number | undefined): number | undefined {
 // ---------------------------------------------------------------------------
 // 1. 축소
 
-interface Downsampled {
+export interface Downsampled {
   w: number;
   h: number;
   rgb: Uint8Array;
@@ -107,7 +107,7 @@ interface Downsampled {
 }
 
 /** 면적 가중 평균으로 줄인다. 비율이 정수가 아니어도 획 굵기가 들쭉날쭉해지지 않는다. */
-function downsample(src: ArrayLike<number>, sw: number, sh: number, w: number, h: number): Downsampled {
+export function downsample(src: ArrayLike<number>, sw: number, sh: number, w: number, h: number): Downsampled {
   const rgb = new Uint8Array(w * h * 3);
   const lum = new Float32Array(w * h);
   const stepX = sw / w;
@@ -175,7 +175,7 @@ function downsample(src: ArrayLike<number>, sw: number, sh: number, w: number, h
 // ---------------------------------------------------------------------------
 // 2. 배경 추정
 
-interface Background {
+export interface Background {
   block: number;
   gw: number;
   gh: number;
@@ -187,7 +187,7 @@ interface Background {
   block3: { l: Float32Array; r: Float32Array; g: Float32Array; b: Float32Array };
 }
 
-function estimateBackground(img: Downsampled): Background {
+export function estimateBackground(img: Downsampled): Background {
   const { w, h, rgb, lum } = img;
   const block = Math.max(12, Math.round(Math.max(w, h) / 64));
   const gw = Math.ceil(w / block);
@@ -313,7 +313,7 @@ function boxGrid(src: Float32Array, gw: number, gh: number): Float32Array {
 }
 
 /** 그리드를 쌍선형 보간한다. x, y는 처리 해상도의 픽셀 인덱스. */
-function sampleGrid(grid: Float32Array, bg: Background, x: number, y: number): number {
+export function sampleGrid(grid: Float32Array, bg: Background, x: number, y: number): number {
   let gx = (x + 0.5) / bg.block - 0.5;
   let gy = (y + 0.5) / bg.block - 0.5;
   if (gx < 0) gx = 0;
@@ -332,7 +332,7 @@ function sampleGrid(grid: Float32Array, bg: Background, x: number, y: number): n
 }
 
 /** 배경 대비 어두운 비율(잉크 대비)을 구하고 [1,2,1] 커널로 살짝 흐린다. */
-function inkContrastMap(img: Downsampled, bg: Background): { raw: Float32Array; smooth: Float32Array } {
+export function inkContrastMap(img: Downsampled, bg: Background): { raw: Float32Array; smooth: Float32Array } {
   const { w, h, lum } = img;
   const raw = new Float32Array(w * h);
   for (let y = 0; y < h; y++) {
@@ -363,7 +363,7 @@ function inkContrastMap(img: Downsampled, bg: Background): { raw: Float32Array; 
 }
 
 /** 반경 r 안의 최댓값(정사각 창). 가로와 세로로 나눠 van Herk 방식으로 계산해 창 크기와 상관없이 빠르다. */
-function localMax(src: Float32Array, w: number, h: number, r: number): Float32Array {
+export function localMax(src: Float32Array, w: number, h: number, r: number): Float32Array {
   const out = new Float32Array(src.length);
   const size = 2 * r + 1;
   const n = Math.max(w, h) + 2 * r;
@@ -396,7 +396,7 @@ function localMax(src: Float32Array, w: number, h: number, r: number): Float32Ar
 }
 
 /** 대비 지도의 중앙값과 잡음 크기(MAD 기반 표준편차)를 잰다. */
-function contrastNoise(d: Float32Array): { median: number; sigma: number } {
+export function contrastNoise(d: Float32Array): { median: number; sigma: number } {
   const bins = 4000;
   const lo = -1;
   const span = 2;
@@ -429,14 +429,14 @@ function contrastNoise(d: Float32Array): { median: number; sigma: number } {
 // ---------------------------------------------------------------------------
 // 공통: 연결 요소, 거리 변환 (1px 패딩된 격자에서 동작)
 
-interface Labels {
+export interface Labels {
   labels: Int32Array;
   count: number;
   areas: Int32Array;
 }
 
 /** 연결 요소 라벨링(두 패스 union-find). 라벨은 1부터, 0은 바탕. */
-function labelComponents(mask: Uint8Array, W: number, H: number, conn8: boolean): Labels {
+export function labelComponents(mask: Uint8Array, W: number, H: number, conn8: boolean): Labels {
   const labels = new Int32Array(W * H);
   const parent: number[] = [0];
   const find = (a: number): number => {
@@ -495,7 +495,7 @@ function labelComponents(mask: Uint8Array, W: number, H: number, conn8: boolean)
 }
 
 /** target이 1인 가장 가까운 픽셀까지의 제곱 유클리드 거리(Felzenszwalb-Huttenlocher). */
-function sqDistanceTo(target: Uint8Array, W: number, H: number): Float32Array {
+export function sqDistanceTo(target: Uint8Array, W: number, H: number): Float32Array {
   const INF = 1e12;
   const out = new Float32Array(W * H);
   const n = Math.max(W, H);
@@ -544,7 +544,7 @@ function sqDistanceTo(target: Uint8Array, W: number, H: number): Float32Array {
  * 잉크 픽셀에서 가장 가까운 바탕까지의 제곱 거리. 바탕은 0이다. 격자 둘레 1px은 바탕이어야 한다.
  * 한 행의 이어진 잉크 구간은 양옆 바탕 픽셀보다 먼 열의 영향을 받지 않으므로 구간 안에서만 계산한다.
  */
-function inkDistance2(mask: Uint8Array, W: number, H: number): Float32Array {
+export function inkDistance2(mask: Uint8Array, W: number, H: number): Float32Array {
   const g = new Int32Array(W * H);
   for (let y = 1; y < H; y++) {
     for (let x = 0, i = y * W; x < W; x++, i++) if (mask[i]) g[i] = g[i - W] + 1;
